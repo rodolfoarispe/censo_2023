@@ -1,0 +1,14 @@
+# Archivos grandes (disponibles en Google Drive)
+*.duckdb
+*.zip
+*.z01
+*.z02
+
+# Archivos temporales
+*.pyc
+__pycache__/
+*.tmp
+
+# Archivos de datos exportados
+*.csv
+*.xlsx
