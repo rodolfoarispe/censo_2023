@@ -73,6 +73,19 @@ def cargar_xlsx(archivo: Path, nombre_tabla: str, con, skiprows: int = 0):
     con.execute(f"CREATE TABLE {nombre_tabla} AS SELECT * FROM df_temp")
     con.unregister("df_temp")
 
+def cargar_csv(archivo: Path, nombre_tabla: str, con):
+    """Carga un archivo .csv en DuckDB."""
+    import pandas as pd
+
+    print(f"  Cargando {archivo.name}...")
+    df = pd.read_csv(archivo, encoding='utf-8-sig')
+    print(f"    → {len(df):,} registros, {len(df.columns)} columnas")
+
+    con.execute(f"DROP TABLE IF EXISTS {nombre_tabla}")
+    con.register("df_temp", df)
+    con.execute(f"CREATE TABLE {nombre_tabla} AS SELECT * FROM df_temp")
+    con.unregister("df_temp")
+
 def cargar_mapa_pobreza(archivo: Path, con):
     """Carga el mapa de pobreza con estructura correcta."""
     import pandas as pd
@@ -197,6 +210,22 @@ def main():
                     cargar_xlsx(ruta, tabla, con)
                 except Exception as e:
                     print(f"  ⚠️  Error en {archivo}: {e}")
+
+        # Cargar CSV adicionales (planilla, etc)
+        print("\n📋 Cargando archivos CSV...")
+        csvs = [
+            ("planilla.csv", "planilla"),
+        ]
+        
+        for archivo, tabla in csvs:
+            ruta = base_dir / archivo
+            if ruta.exists():
+                try:
+                    cargar_csv(ruta, tabla, con)
+                except Exception as e:
+                    print(f"  ⚠️  Error en {archivo}: {e}")
+            else:
+                print(f"  ℹ️  No encontrado: {archivo}")
 
         # Cargar mapa de pobreza si se proporciona
         if args.mapa_pobreza:

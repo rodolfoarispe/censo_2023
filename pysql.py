@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# pip install duckdb sqlalchemy pymssql pyodbc pandas tabulate openpyxl
 """
 PySql - Cliente SQL multi-base de datos
 Soporta: DuckDB, SQL Server (MSSQL)

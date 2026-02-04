@@ -107,3 +107,58 @@ FROM personas
 GROUP BY 1, 2
 ORDER BY 1, 2
 ```
+
+## Tabla planilla
+
+| Tabla | Descripción | Registros |
+|-------|-------------|-----------|
+| `planilla` | Beneficiarios de programas sociales | 186,225 |
+
+### Campos de la tabla planilla
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `IdEntrada` | BIGINT | ID único de registro |
+| `Cedula` | VARCHAR | Cédula del beneficiario |
+| `Nombre` | VARCHAR | Nombre completo |
+| `Provincia` | VARCHAR | Nombre de la provincia |
+| `Distrito` | VARCHAR | Nombre del distrito |
+| `Corregimiento` | VARCHAR | Nombre del corregimiento |
+| `Id_Correg` | BIGINT | ID geográfico del corregimiento |
+| `Programa` | VARCHAR | Nombre del programa social |
+| `Sede` | VARCHAR | Sede del programa |
+
+### Programas disponibles
+
+- **B/. 120 A LOS 65**: 116,495 beneficiarios
+- **RED DE OPORTUNIDADES**: 42,591 beneficiarios
+- **ANGEL GUARDIAN**: 19,851 beneficiarios
+- **SENAPAN**: 7,288 beneficiarios
+
+### Ejemplo: Unir planilla con datos del censo
+
+```sql
+-- Beneficiarios de programas por género
+SELECT 
+    p.PROGRAMA as programa,
+    CASE WHEN c.P02_SEXO = '1' THEN 'Masculino' ELSE 'Femenino' END as genero,
+    COUNT(*) as cantidad
+FROM planilla p
+LEFT JOIN personas c 
+    ON p.Cedula = c.CEDULA
+GROUP BY p.PROGRAMA, c.P02_SEXO
+ORDER BY p.PROGRAMA, genero;
+```
+
+### Ejemplo: Cobertura geográfica de beneficiarios
+
+```sql
+SELECT 
+    p.Provincia,
+    p.Distrito,
+    COUNT(*) as beneficiarios,
+    COUNT(DISTINCT p.Cedula) as personas_unicas
+FROM planilla p
+GROUP BY p.Provincia, p.Distrito
+ORDER BY beneficiarios DESC;
+```
