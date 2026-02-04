@@ -127,6 +127,65 @@ def generar_excel_simple(db_path, output_file):
     # Top gaps absolutos
     df_top_gaps = df_principal.head(50).copy()
     
+    # Query casos de sobreatención
+    print("  🔄 Identificando casos de sobreatención...")
+    query_sobreatencion = """
+    WITH cobertura_por_correg AS (
+        SELECT 
+            p.Id_Correg,
+            p.Provincia, p.Distrito, p.Corregimiento,
+            COUNT(*) as total_beneficiarios,
+            COUNT(CASE WHEN p.Programa = 'B/. 120 A LOS 65' THEN 1 END) as ben_120_65,
+            COUNT(CASE WHEN p.Programa = 'RED DE OPORTUNIDADES' THEN 1 END) as ben_red_oport,
+            COUNT(CASE WHEN p.Programa = 'ANGEL GUARDIAN' THEN 1 END) as ben_angel_guardian,
+            COUNT(CASE WHEN p.Programa = 'SENAPAN' THEN 1 END) as ben_senapan
+        FROM planilla p
+        GROUP BY p.Id_Correg, p.Provincia, p.Distrito, p.Corregimiento
+    ),
+    id_correg_mapa AS (
+        SELECT 
+            *,
+            (codigo_provincia * 10000 + codigo_distrito * 100 + codigo_corregimiento) as Id_Correg_Calc
+        FROM mapa_pobreza
+        WHERE total_personas > 0
+    )
+    SELECT 
+        c.Provincia as provincia_planilla,
+        c.Distrito as distrito_planilla,
+        c.Corregimiento as corregimiento_planilla,
+        COALESCE(m.provincia, 'SIN DATOS POBREZA') as provincia_mapa,
+        COALESCE(m.distrito, 'SIN DATOS') as distrito_mapa,
+        COALESCE(m.corregimiento, 'SIN DATOS') as corregimiento_mapa,
+        COALESCE(m.total_personas, 0) as poblacion_total,
+        ROUND(COALESCE(m.pct_pobreza_general_personas * 100, 0), 1) as pobreza_general_pct,
+        ROUND(COALESCE(m.pct_pobreza_extrema_personas * 100, 0), 1) as pobreza_extrema_pct,
+        ROUND(COALESCE(m.total_personas * m.pct_pobreza_general_personas, 0)) as personas_pobreza_general,
+        ROUND(COALESCE(m.total_personas * m.pct_pobreza_extrema_personas, 0)) as personas_pobreza_extrema,
+        c.total_beneficiarios,
+        c.ben_120_65,
+        c.ben_red_oport,
+        c.ben_angel_guardian,
+        c.ben_senapan,
+        ROUND(c.total_beneficiarios * 100.0 / NULLIF(m.total_personas * m.pct_pobreza_general_personas, 0), 1) as cobertura_vs_pobreza_general,
+        ROUND(c.total_beneficiarios * 100.0 / NULLIF(m.total_personas * m.pct_pobreza_extrema_personas, 0), 1) as cobertura_vs_pobreza_extrema,
+        ROUND(c.total_beneficiarios - COALESCE(m.total_personas * m.pct_pobreza_general_personas, 0)) as exceso_vs_pobreza_general,
+        ROUND(c.total_beneficiarios - COALESCE(m.total_personas * m.pct_pobreza_extrema_personas, 0)) as exceso_vs_pobreza_extrema,
+        CASE 
+            WHEN m.Id_Correg_Calc IS NULL THEN 'SIN DATOS POBREZA'
+            WHEN c.total_beneficiarios > m.total_personas * m.pct_pobreza_general_personas THEN 'SOBREATENCION GENERAL'
+            WHEN c.total_beneficiarios > m.total_personas * m.pct_pobreza_extrema_personas THEN 'SOBREATENCION EXTREMA'
+            ELSE 'NORMAL'
+        END as tipo_atencion,
+        c.Id_Correg as id_correg_planilla
+    FROM cobertura_por_correg c
+    LEFT JOIN id_correg_mapa m ON c.Id_Correg = m.Id_Correg_Calc
+    WHERE c.total_beneficiarios > COALESCE(m.total_personas * m.pct_pobreza_general_personas, 0)
+       OR m.Id_Correg_Calc IS NULL
+    ORDER BY c.total_beneficiarios - COALESCE(m.total_personas * m.pct_pobreza_general_personas, 0) DESC
+    """
+    
+    df_sobreatencion = con.execute(query_sobreatencion).fetchdf()
+    
     con.close()
     
     # Crear Excel
@@ -142,10 +201,13 @@ def generar_excel_simple(db_path, output_file):
         # Hoja 3: Por Provincia
         df_provincias.to_excel(writer, sheet_name='Por Provincia', index=False)
         
-        # Hoja 4: Análisis completo (todos los corregimientos)
+        # Hoja 4: Casos de Sobreatención
+        df_sobreatencion.to_excel(writer, sheet_name='Sobreatención', index=False)
+        
+        # Hoja 5: Análisis completo (todos los corregimientos)
         df_principal.to_excel(writer, sheet_name='Análisis Completo', index=False)
         
-        # Hoja 5: Resumen
+        # Hoja 6: Resumen actualizado
         resumen_data = {
             'Indicador': [
                 'Total Corregimientos Analizados',
@@ -156,7 +218,10 @@ def generar_excel_simple(db_path, output_file):
                 'Cobertura Nacional (%)',
                 'Corregimientos con Pobreza >50%',
                 'Corregimientos Sin Cobertura',
-                'Gap Nacional (personas sin atender)'
+                'Gap Nacional (personas sin atender)',
+                'Corregimientos con Sobreatención',
+                'Beneficiarios en Sobreatención',
+                'Exceso Total de Beneficiarios'
             ],
             'Valor': [
                 len(df_principal),
@@ -167,7 +232,10 @@ def generar_excel_simple(db_path, output_file):
                 f"{df_principal['total_beneficiarios'].sum() * 100 / df_principal['personas_pobreza_general'].sum():.1f}%",
                 len(df_principal[df_principal['pobreza_general_pct'] >= 50]),
                 len(df_principal[df_principal['total_beneficiarios'] == 0]),
-                f"{df_principal['gap_atencion_absoluto'].sum():,.0f}"
+                f"{df_principal['gap_atencion_absoluto'].sum():,.0f}",
+                len(df_sobreatencion),
+                f"{df_sobreatencion['total_beneficiarios'].sum():,.0f}",
+                f"{df_sobreatencion[df_sobreatencion['exceso_vs_pobreza_general'] > 0]['exceso_vs_pobreza_general'].sum():,.0f}"
             ]
         }
         pd.DataFrame(resumen_data).to_excel(writer, sheet_name='Resumen Ejecutivo', index=False)
@@ -191,10 +259,11 @@ if __name__ == "__main__":
             # Mostrar estadísticas
             file_size = Path(output_file).stat().st_size / (1024 * 1024)
             print(f"📁 Tamaño: {file_size:.1f} MB")
-            print(f"📊 5 hojas incluidas:")
+            print(f"📊 6 hojas incluidas:")
             print(f"   • Top 50 Brechas")
             print(f"   • Casos Críticos")  
             print(f"   • Por Provincia")
+            print(f"   • Sobreatención")
             print(f"   • Análisis Completo")
             print(f"   • Resumen Ejecutivo")
         else:
