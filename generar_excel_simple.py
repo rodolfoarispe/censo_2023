@@ -22,15 +22,23 @@ def generar_excel_simple(db_path, output_file):
     print("  📈 Procesando brechas por corregimiento...")
     query_principal = """
     WITH cobertura_por_correg AS (
-        SELECT 
-            p.Id_Correg,
+        SELECT
+            p.id_correg,
             COUNT(*) as total_beneficiarios,
             COUNT(CASE WHEN p.Programa = 'B/. 120 A LOS 65' THEN 1 END) as ben_120_65,
             COUNT(CASE WHEN p.Programa = 'RED DE OPORTUNIDADES' THEN 1 END) as ben_red_oport,
             COUNT(CASE WHEN p.Programa = 'ANGEL GUARDIAN' THEN 1 END) as ben_angel_guardian,
-            COUNT(CASE WHEN p.Programa = 'SENAPAN' THEN 1 END) as ben_senapan
+            COUNT(CASE WHEN p.Programa = 'SENAPAN' THEN 1 END) as ben_senapan,
+            COUNT(CASE WHEN p.Sexo = 'Mujer' THEN 1 END) as ben_femenino,
+            COUNT(CASE WHEN p.Sexo = 'Hombre' THEN 1 END) as ben_masculino,
+            SUM(COALESCE(p.Menores_18, 0)) as total_menores_18,
+            -- Elegibilidad interpretada: NULL + sin FUPS = SIN FUPS, NULL + con FUPS = SIN PMT
+            COUNT(CASE WHEN p.Elegibilidad = 'ELEGIBLE' THEN 1 END) as elegibles,
+            COUNT(CASE WHEN p.Elegibilidad = 'NO ELEGIBLE' THEN 1 END) as no_elegibles,
+            COUNT(CASE WHEN p.Elegibilidad IS NULL AND p.Fecha_Ultima_FUPS IS NULL THEN 1 END) as sin_fups,
+            COUNT(CASE WHEN p.Elegibilidad IS NULL AND p.Fecha_Ultima_FUPS IS NOT NULL THEN 1 END) as sin_pmt
         FROM planilla p
-        GROUP BY p.Id_Correg
+        GROUP BY p.id_correg
     ),
     id_correg_mapa AS (
         SELECT 
@@ -70,7 +78,7 @@ def generar_excel_simple(db_path, output_file):
             ELSE 'ALTA'
         END as nivel_cobertura
     FROM id_correg_mapa m
-    LEFT JOIN cobertura_por_correg c ON m.Id_Correg_Calc = c.Id_Correg
+    LEFT JOIN cobertura_por_correg c ON m.Id_Correg_Calc = c.id_correg
     ORDER BY gap_atencion_absoluto DESC
     """
     
@@ -92,12 +100,15 @@ def generar_excel_simple(db_path, output_file):
         GROUP BY m.codigo_provincia, m.provincia
     ),
     beneficiarios_provincia AS (
-        SELECT 
-            CAST(p.Id_Correg / 10000 AS INTEGER) as codigo_provincia,
+        SELECT
+            CAST(p.id_correg / 10000 AS INTEGER) as codigo_provincia,
             COUNT(*) as total_beneficiarios,
-            COUNT(DISTINCT p.Id_Correg) as corregimientos_atendidos
+            COUNT(DISTINCT p.id_correg) as corregimientos_atendidos,
+            COUNT(CASE WHEN p.Sexo = 'Mujer' THEN 1 END) as ben_femenino,
+            COUNT(CASE WHEN p.Sexo = 'Hombre' THEN 1 END) as ben_masculino,
+            SUM(COALESCE(p.Menores_18, 0)) as total_menores_18
         FROM planilla p
-        GROUP BY CAST(p.Id_Correg / 10000 AS INTEGER)
+        GROUP BY CAST(p.id_correg / 10000 AS INTEGER)
     )
     SELECT 
         sp.provincia,
@@ -131,31 +142,30 @@ def generar_excel_simple(db_path, output_file):
     print("  🔄 Identificando casos de sobreatención...")
     query_sobreatencion = """
     WITH cobertura_por_correg AS (
-        SELECT 
-            p.Id_Correg,
-            p.Provincia, p.Distrito, p.Corregimiento,
+        SELECT
+            p.id_correg,
             COUNT(*) as total_beneficiarios,
             COUNT(CASE WHEN p.Programa = 'B/. 120 A LOS 65' THEN 1 END) as ben_120_65,
             COUNT(CASE WHEN p.Programa = 'RED DE OPORTUNIDADES' THEN 1 END) as ben_red_oport,
             COUNT(CASE WHEN p.Programa = 'ANGEL GUARDIAN' THEN 1 END) as ben_angel_guardian,
-            COUNT(CASE WHEN p.Programa = 'SENAPAN' THEN 1 END) as ben_senapan
+            COUNT(CASE WHEN p.Programa = 'SENAPAN' THEN 1 END) as ben_senapan,
+            COUNT(CASE WHEN p.Sexo = 'Mujer' THEN 1 END) as ben_femenino,
+            COUNT(CASE WHEN p.Sexo = 'Hombre' THEN 1 END) as ben_masculino,
+            SUM(COALESCE(p.Menores_18, 0)) as total_menores_18
         FROM planilla p
-        GROUP BY p.Id_Correg, p.Provincia, p.Distrito, p.Corregimiento
+        GROUP BY p.id_correg
     ),
     id_correg_mapa AS (
-        SELECT 
+        SELECT
             *,
             (codigo_provincia * 10000 + codigo_distrito * 100 + codigo_corregimiento) as Id_Correg_Calc
         FROM mapa_pobreza
         WHERE total_personas > 0
     )
-    SELECT 
-        c.Provincia as provincia_planilla,
-        c.Distrito as distrito_planilla,
-        c.Corregimiento as corregimiento_planilla,
-        COALESCE(m.provincia, 'SIN DATOS POBREZA') as provincia_mapa,
-        COALESCE(m.distrito, 'SIN DATOS') as distrito_mapa,
-        COALESCE(m.corregimiento, 'SIN DATOS') as corregimiento_mapa,
+    SELECT
+        COALESCE(m.provincia, 'SIN DATOS POBREZA') as provincia,
+        COALESCE(m.distrito, 'SIN DATOS') as distrito,
+        COALESCE(m.corregimiento, 'SIN DATOS') as corregimiento,
         COALESCE(m.total_personas, 0) as poblacion_total,
         ROUND(COALESCE(m.pct_pobreza_general_personas * 100, 0), 1) as pobreza_general_pct,
         ROUND(COALESCE(m.pct_pobreza_extrema_personas * 100, 0), 1) as pobreza_extrema_pct,
@@ -166,19 +176,22 @@ def generar_excel_simple(db_path, output_file):
         c.ben_red_oport,
         c.ben_angel_guardian,
         c.ben_senapan,
+        c.ben_femenino,
+        c.ben_masculino,
+        c.total_menores_18,
         ROUND(c.total_beneficiarios * 100.0 / NULLIF(m.total_personas * m.pct_pobreza_general_personas, 0), 1) as cobertura_vs_pobreza_general,
         ROUND(c.total_beneficiarios * 100.0 / NULLIF(m.total_personas * m.pct_pobreza_extrema_personas, 0), 1) as cobertura_vs_pobreza_extrema,
         ROUND(c.total_beneficiarios - COALESCE(m.total_personas * m.pct_pobreza_general_personas, 0)) as exceso_vs_pobreza_general,
         ROUND(c.total_beneficiarios - COALESCE(m.total_personas * m.pct_pobreza_extrema_personas, 0)) as exceso_vs_pobreza_extrema,
-        CASE 
+        CASE
             WHEN m.Id_Correg_Calc IS NULL THEN 'SIN DATOS POBREZA'
             WHEN c.total_beneficiarios > m.total_personas * m.pct_pobreza_general_personas THEN 'SOBREATENCION GENERAL'
             WHEN c.total_beneficiarios > m.total_personas * m.pct_pobreza_extrema_personas THEN 'SOBREATENCION EXTREMA'
             ELSE 'NORMAL'
         END as tipo_atencion,
-        c.Id_Correg as id_correg_planilla
+        c.id_correg as id_correg_planilla
     FROM cobertura_por_correg c
-    LEFT JOIN id_correg_mapa m ON c.Id_Correg = m.Id_Correg_Calc
+    LEFT JOIN id_correg_mapa m ON c.id_correg = m.Id_Correg_Calc
     WHERE c.total_beneficiarios > COALESCE(m.total_personas * m.pct_pobreza_general_personas, 0)
        OR m.Id_Correg_Calc IS NULL
     ORDER BY c.total_beneficiarios - COALESCE(m.total_personas * m.pct_pobreza_general_personas, 0) DESC

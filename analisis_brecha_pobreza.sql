@@ -3,18 +3,23 @@
 
 WITH cobertura_por_correg AS (
     -- Calcular beneficiarios por corregimiento y programa
-    SELECT 
-        p.Id_Correg,
-        p.Provincia as prov_planilla,
-        p.Distrito as dist_planilla,
-        p.Corregimiento as correg_planilla,
+    SELECT
+        p.id_correg,
         COUNT(*) as total_beneficiarios,
         COUNT(CASE WHEN p.Programa = 'B/. 120 A LOS 65' THEN 1 END) as ben_120_65,
         COUNT(CASE WHEN p.Programa = 'RED DE OPORTUNIDADES' THEN 1 END) as ben_red_oport,
         COUNT(CASE WHEN p.Programa = 'ANGEL GUARDIAN' THEN 1 END) as ben_angel_guardian,
-        COUNT(CASE WHEN p.Programa = 'SENAPAN' THEN 1 END) as ben_senapan
+        COUNT(CASE WHEN p.Programa = 'SENAPAN' THEN 1 END) as ben_senapan,
+        COUNT(CASE WHEN p.Sexo = 'Mujer' THEN 1 END) as ben_femenino,
+        COUNT(CASE WHEN p.Sexo = 'Hombre' THEN 1 END) as ben_masculino,
+        SUM(COALESCE(p.Menores_18, 0)) as total_menores_18,
+        -- Elegibilidad interpretada: NULL + sin FUPS = SIN FUPS, NULL + con FUPS = SIN PMT
+        COUNT(CASE WHEN p.Elegibilidad = 'ELEGIBLE' THEN 1 END) as elegibles,
+        COUNT(CASE WHEN p.Elegibilidad = 'NO ELEGIBLE' THEN 1 END) as no_elegibles,
+        COUNT(CASE WHEN p.Elegibilidad IS NULL AND p.Fecha_Ultima_FUPS IS NULL THEN 1 END) as sin_fups,
+        COUNT(CASE WHEN p.Elegibilidad IS NULL AND p.Fecha_Ultima_FUPS IS NOT NULL THEN 1 END) as sin_pmt
     FROM planilla p
-    GROUP BY p.Id_Correg, p.Provincia, p.Distrito, p.Corregimiento
+    GROUP BY p.id_correg
 ),
 id_correg_mapa AS (
     -- Crear ID compuesto para enlace con planilla
@@ -72,7 +77,7 @@ analisis_brecha AS (
         END as nivel_brecha
         
     FROM id_correg_mapa m
-    LEFT JOIN cobertura_por_correg c ON m.Id_Correg_Calc = c.Id_Correg
+    LEFT JOIN cobertura_por_correg c ON m.Id_Correg_Calc = c.id_correg
 )
 SELECT * FROM analisis_brecha
 ORDER BY gap_pobreza_general DESC;

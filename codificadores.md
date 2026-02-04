@@ -118,47 +118,85 @@ ORDER BY 1, 2
 
 | Campo | Tipo | Descripción |
 |-------|------|-------------|
-| `IdEntrada` | BIGINT | ID único de registro |
 | `Cedula` | VARCHAR | Cédula del beneficiario |
 | `Nombre` | VARCHAR | Nombre completo |
-| `Provincia` | VARCHAR | Nombre de la provincia |
-| `Distrito` | VARCHAR | Nombre del distrito |
-| `Corregimiento` | VARCHAR | Nombre del corregimiento |
-| `Id_Correg` | BIGINT | ID geográfico del corregimiento |
 | `Programa` | VARCHAR | Nombre del programa social |
-| `Sede` | VARCHAR | Sede del programa |
+| `Sexo` | VARCHAR | Género (Hombre/Mujer) |
+| `id_correg` | BIGINT | ID geográfico compuesto del corregimiento |
+| `Fecha_Nacimiento` | DATE | Fecha de nacimiento del beneficiario |
+| `Fecha_Ultima_FUPS` | TIMESTAMP | Fecha de última actualización FUPS |
+| `Elegibilidad` | VARCHAR | Estado de elegibilidad (ver interpretación abajo) |
+| `Fecha_Elegibilidad` | TIMESTAMP | Fecha de determinación de elegibilidad |
+| `Menores_18` | BIGINT | Cantidad de menores de 18 años en el hogar |
+
+### Interpretación de Elegibilidad
+
+| Valor en BD | Interpretación | Descripción |
+|-------------|----------------|-------------|
+| `ELEGIBLE` | ELEGIBLE | Cumple criterios del PMT |
+| `NO ELEGIBLE` | NO ELEGIBLE | No cumple criterios del PMT |
+| `NULL` + `Fecha_Ultima_FUPS IS NULL` | SIN FUPS | Sin encuesta FUPS realizada |
+| `NULL` + `Fecha_Ultima_FUPS IS NOT NULL` | SIN PMT | Con FUPS pero sin cálculo de Proxy Means Test |
+
+```sql
+-- Query para interpretar elegibilidad
+SELECT
+    CASE
+        WHEN Elegibilidad IS NOT NULL THEN Elegibilidad
+        WHEN Fecha_Ultima_FUPS IS NULL THEN 'SIN FUPS'
+        ELSE 'SIN PMT'
+    END as elegibilidad_interpretada
+FROM planilla;
+```
 
 ### Programas disponibles
 
-- **B/. 120 A LOS 65**: 116,495 beneficiarios
-- **RED DE OPORTUNIDADES**: 42,591 beneficiarios
-- **ANGEL GUARDIAN**: 19,851 beneficiarios
-- **SENAPAN**: 7,288 beneficiarios
+- **B/. 120 A LOS 65**: Pensión para adultos mayores
+- **RED DE OPORTUNIDADES**: Transferencias condicionadas
+- **ANGEL GUARDIAN**: Apoyo a personas con discapacidad
+- **SENAPAN**: Seguridad alimentaria
 
-### Ejemplo: Unir planilla con datos del censo
+### Enlace geográfico planilla ↔ mapa_pobreza
 
-```sql
--- Beneficiarios de programas por género
-SELECT 
-    p.PROGRAMA as programa,
-    CASE WHEN c.P02_SEXO = '1' THEN 'Masculino' ELSE 'Femenino' END as genero,
-    COUNT(*) as cantidad
-FROM planilla p
-LEFT JOIN personas c 
-    ON p.Cedula = c.CEDULA
-GROUP BY p.PROGRAMA, c.P02_SEXO
-ORDER BY p.PROGRAMA, genero;
+El campo `id_correg` es un código compuesto:
+```
+id_correg = codigo_provincia * 10000 + codigo_distrito * 100 + codigo_corregimiento
 ```
 
-### Ejemplo: Cobertura geográfica de beneficiarios
+Ejemplo: Corregimiento 80105 = Provincia 8, Distrito 1, Corregimiento 5
 
 ```sql
-SELECT 
-    p.Provincia,
-    p.Distrito,
-    COUNT(*) as beneficiarios,
-    COUNT(DISTINCT p.Cedula) as personas_unicas
+-- Unir planilla con mapa de pobreza
+SELECT
+    m.provincia, m.distrito, m.corregimiento,
+    COUNT(*) as beneficiarios
 FROM planilla p
-GROUP BY p.Provincia, p.Distrito
-ORDER BY beneficiarios DESC;
+JOIN mapa_pobreza m
+    ON p.id_correg = (m.codigo_provincia * 10000 + m.codigo_distrito * 100 + m.codigo_corregimiento)
+GROUP BY m.provincia, m.distrito, m.corregimiento;
+```
+
+### Ejemplo: Beneficiarios por género y programa
+
+```sql
+SELECT
+    Programa,
+    Sexo,
+    COUNT(*) as cantidad,
+    SUM(Menores_18) as menores_asociados
+FROM planilla
+GROUP BY Programa, Sexo
+ORDER BY Programa, Sexo;
+```
+
+### Ejemplo: Análisis de elegibilidad
+
+```sql
+SELECT
+    Programa,
+    Elegibilidad,
+    COUNT(*) as cantidad
+FROM planilla
+GROUP BY Programa, Elegibilidad
+ORDER BY Programa, cantidad DESC;
 ```
