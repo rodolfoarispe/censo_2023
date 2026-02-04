@@ -82,21 +82,22 @@ def generar_excel_simple(db_path, output_file):
     query_provincias = """
     WITH stats_provincia AS (
         SELECT 
+            m.codigo_provincia,
             m.provincia,
             SUM(m.total_personas) as poblacion_total,
             SUM(m.total_personas * m.pct_pobreza_general_personas) as personas_pobreza,
             COUNT(*) as total_corregimientos
         FROM mapa_pobreza m
         WHERE m.total_personas > 0
-        GROUP BY m.provincia
+        GROUP BY m.codigo_provincia, m.provincia
     ),
     beneficiarios_provincia AS (
         SELECT 
-            Provincia,
+            CAST(p.Id_Correg / 10000 AS INTEGER) as codigo_provincia,
             COUNT(*) as total_beneficiarios,
-            COUNT(DISTINCT Id_Correg) as corregimientos_atendidos
-        FROM planilla
-        GROUP BY Provincia
+            COUNT(DISTINCT p.Id_Correg) as corregimientos_atendidos
+        FROM planilla p
+        GROUP BY CAST(p.Id_Correg / 10000 AS INTEGER)
     )
     SELECT 
         sp.provincia,
@@ -107,9 +108,10 @@ def generar_excel_simple(db_path, output_file):
         ROUND(COALESCE(bp.total_beneficiarios, 0) * 100.0 / sp.personas_pobreza, 1) as cobertura_pct,
         COALESCE(bp.corregimientos_atendidos, 0) as corregimientos_atendidos,
         sp.total_corregimientos,
-        ROUND(COALESCE(bp.corregimientos_atendidos, 0) * 100.0 / sp.total_corregimientos, 1) as cobertura_geografica_pct
+        ROUND(COALESCE(bp.corregimientos_atendidos, 0) * 100.0 / sp.total_corregimientos, 1) as cobertura_geografica_pct,
+        ROUND(sp.personas_pobreza - COALESCE(bp.total_beneficiarios, 0)) as gap_provincial
     FROM stats_provincia sp
-    LEFT JOIN beneficiarios_provincia bp ON sp.provincia = bp.Provincia
+    LEFT JOIN beneficiarios_provincia bp ON sp.codigo_provincia = bp.codigo_provincia
     ORDER BY sp.personas_pobreza DESC
     """
     
