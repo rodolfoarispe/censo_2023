@@ -1,0 +1,21 @@
+{
+  "total_shapefile": 699,
+  "total_db": 699,
+  "coinciden": 693,
+  "solo_en_shapefile": [
+    100001,
+    100002,
+    100003,
+    100004,
+    50300
+  ],
+  "solo_en_bd": [
+    10403,
+    41001,
+    100101,
+    100102,
+    100103,
+    100104
+  ],
+  "nota": "Los IDs en solo_en_shapefile pueden estar obsoletos. Los de solo_en_bd pueden ser nuevos o sin geometr\u00eda."
+}

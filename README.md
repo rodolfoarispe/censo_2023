@@ -11,11 +11,19 @@ corregimiento usando DuckDB.
   - duckdb
   - pandas
   - openpyxl
+  - geopandas
+  - folium
 
 Instalacion rapida:
 
 ```bash
-pip install duckdb pandas openpyxl
+pip install duckdb pandas openpyxl geopandas folium
+```
+
+Nota: Asegúrate de activar el venv antes de ejecutar:
+
+```bash
+source ~/vEnv/pandas/bin/activate
 ```
 
 ## Datos necesarios
@@ -23,7 +31,9 @@ pip install duckdb pandas openpyxl
 - `censo_2023.duckdb` (base de datos DuckDB con tablas del censo)
 - `planilla` debe existir dentro de la base de datos
 
-## Generar Excel de analisis
+## Generar reportes
+
+### Excel de análisis
 
 El script principal es:
 
@@ -41,6 +51,36 @@ Salida:
   - Sobreatencion
   - Analisis Completo
   - Resumen Ejecutivo
+
+### Mapas interactivos (Choropleth)
+
+Visualiza cobertura vs pobreza en mapas geográficos interactivos:
+
+```bash
+# Un solo mapa específico
+python choropleth_cobertura.py --metric cobertura --output mapa_cobertura.html
+
+# Todas las métricas disponibles
+python generar_mapas.py --output-dir ./mapas
+
+# Mostrar directamente en navegador
+python choropleth_cobertura.py --metric gap --show
+```
+
+**Métricas disponibles:**
+- `cobertura`: % de beneficiarios vs pobres (🟢 rojo bajo → verde alto)
+- `gap`: Personas sin cobertura (🔴 amarillo bajo → rojo alto)
+- `pobreza_general`: % de pobreza general (🔵 azul)
+- `pobreza_extrema`: % de pobreza extrema (⚫ rojo oscuro)
+
+**Archivos generados:**
+- `mapa_cobertura_YYYYMMDD_HHMM.html` (~97 MB cada uno)
+- Mapas interactivos con tooltip de información
+
+**Datos geográficos:**
+- Fuente shapefile: `/home/rodolfoarispe/Descargas/Panama_Corregimientos_Boundaries_2024/`
+- Documentación: `data/geo/README.md`
+- 693 corregimientos mapeados (de 699 en la BD)
 
 ## Notas
 

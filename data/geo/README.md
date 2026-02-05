@@ -1,0 +1,92 @@
+# Datos Geográficos de Corregimientos
+
+Este directorio contiene datos y configuración para generar mapas interactivos de cobertura vs pobreza en Panamá.
+
+## Archivos
+
+### `ID_CORR_mapping.json`
+Mapeo de discrepancias entre el shapefile de corregimientos y los datos de la BD.
+
+**Estructura:**
+```json
+{
+  "total_shapefile": 699,
+  "total_db": 699,
+  "coinciden": 693,
+  "solo_en_shapefile": [100001, ...],
+  "solo_en_bd": [10403, ...],
+  "nota": "Los IDs pueden estar obsoletos o sin geometría"
+}
+```
+
+**Códigos ID**
+- Formato: XXXXXX (6 dígitos)
+- Estructura: PP DI CC
+  - PP: Provincia (01-13)
+  - DI: Distrito (01-08 aprox)
+  - CC: Corregimiento (01-07 aprox)
+- Ejemplo: `010102` = Provincia 01, Distrito 01, Corregimiento 02
+
+## Generar Mapas
+
+Usar el script `choropleth_cobertura.py` desde la raíz del proyecto:
+
+```bash
+# Activar venv
+source ~/vEnv/pandas/bin/activate
+
+# Mapa de cobertura (%)
+python choropleth_cobertura.py --metric cobertura --output mapa_cobertura.html
+
+# Mapa de gap (personas sin cobertura)
+python choropleth_cobertura.py --metric gap --output mapa_gap.html
+
+# Mapa de pobreza extrema
+python choropleth_cobertura.py --metric pobreza_extrema --output mapa_pobreza_extrema.html
+
+# Mapa de pobreza general
+python choropleth_cobertura.py --metric pobreza_general --output mapa_pobreza_general.html
+
+# Mostrar en navegador
+python choropleth_cobertura.py --metric cobertura --output mapa_cobertura.html --show
+```
+
+## Datos Disponibles
+
+El script carga datos desde:
+- **Geometría**: Shapefile en `/home/rodolfoarispe/Descargas/Panama_Corregimientos_Boundaries_2024/`
+- **BD**: `censo_2023.duckdb` (tabla `mapa_pobreza` + `planilla`)
+
+Métricas por corregimiento:
+- `cobertura_pct`: % de beneficiarios vs pobres
+- `gap`: Número de personas sin cobertura
+- `pobres_total`: Total de personas en pobreza
+- `pobres_extremos`: Personas en pobreza extrema
+- `beneficiarios_total`: Personas con beneficiarios registrados
+- `pct_pobreza_general_personas`: % pobreza general
+- `pct_pobreza_extrema_personas`: % pobreza extrema
+
+## Próximos Pasos (Optimizaciones)
+
+1. **GeoParquet**: Convertir shapefile a formato parquet (1-2 MB vs 39 MB)
+   - Requiere: `pip install pyarrow`
+   - Beneficio: Carga más rápida, menor espacio
+
+2. **Tiles personalizados**: Usar tiles de Mapbox o similar para mejor visualización
+
+3. **Filtros interactivos**: Agregar controles para filtrar por provincia, distrito, rango de cobertura
+
+4. **Exportar a TopoJSON**: Reducir tamaño para sitios web estáticos
+
+## Notas Técnicas
+
+- **CRS**: EPSG:32617 (WGS84 UTM Zone 17N)
+- **Geometría**: Polygon + MultiPolygon
+- **Fuente shapefile**: Panama_Corregimientos_Boundaries_2024
+- **Compatibilidad**: 693/699 corregimientos coinciden con datos de censo
+
+## Referencias
+
+- Script: `../../choropleth_cobertura.py`
+- BD: `../../censo_2023.duckdb`
+- Datos originales: `~/.../Prov-Dist_Corr_2023.xlsx`
