@@ -47,3 +47,5 @@ Salida:
 - El enlace geografico se hace con el codigo compuesto:
   `provincia * 10000 + distrito * 100 + corregimiento`.
 - La tabla `mapa_pobreza` se usa como referencia para pobreza.
+- En elegibilidad, un registro con `NO ELEGIBLE` puede tener informe social que lo
+  declare elegible (no elegible por Proxy, elegible por informe).
