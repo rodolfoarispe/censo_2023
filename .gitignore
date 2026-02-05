@@ -12,3 +12,6 @@ __pycache__/
 # Archivos de datos exportados
 *.csv
 *.xlsx
+# Generated map files (temporal)
+mapa_*.html
+*.html
