@@ -163,17 +163,24 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
     print(f"   Max: {gdf[column].max():.2f}")
     print(f"   Promedio: {gdf[column].mean():.2f}")
 
-    # Calcular centro del mapa (centroide de Panamá)
-    center_lat = gdf.geometry.centroid.y.mean()
-    center_lon = gdf.geometry.centroid.x.mean()
+    # Transformar a WGS84 para folium
+    gdf_wgs84 = gdf.to_crs(epsg=4326)
+    
+    # Centro de Panamá (bien centrado)
+    center_lat = 8.9824
+    center_lon = -79.5199
 
     # Crear mapa base
     m = folium.Map(
         location=[center_lat, center_lon],
         zoom_start=7,
-        tiles="OpenStreetMap",
+        tiles="CartoDB positron",
         prefer_canvas=True,
     )
+    
+    # Ajustar zoom a los bounds de los datos (zoom automático)
+    bounds = gdf_wgs84.geometry.total_bounds  # [minx, miny, maxx, maxy]
+    m.fit_bounds([[bounds[1], bounds[0]], [bounds[3], bounds[2]]])
 
     # Normalizar colores
     vmin = color_config["vmin"]
@@ -182,48 +189,67 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
     # Función para obtener color
     def get_feature_color(value):
         if pd.isna(value):
-            return "gray"
-        normalized = (value - vmin) / (vmax - vmin)
+            return "#888888"
+        
+        # Evitar división por cero
+        if vmax == vmin:
+            normalized = 0.5
+        else:
+            normalized = (value - vmin) / (vmax - vmin)
+        
         normalized = max(0, min(1, normalized))  # Clamp 0-1
 
-        # Mapeo de colores simple
+        # Mapeo de colores RGB
         if color_config["colormap"] == "RdYlGn":
+            # Rojo → Amarillo → Verde
             if normalized < 0.5:
+                # Rojo a Amarillo
                 r = 255
                 g = int(normalized * 2 * 255)
                 b = 0
             else:
+                # Amarillo a Verde
                 r = int((1 - normalized) * 2 * 255)
                 g = 255
                 b = 0
-            return f"#{r:02x}{g:02x}{b:02x}"
+            
         elif color_config["colormap"] == "YlOrRd":
-            if normalized < 0.5:
+            # Amarillo → Naranja → Rojo
+            if normalized < 0.33:
                 r = 255
-                g = int(255 - normalized * 2 * 100)
+                g = int(255 - normalized / 0.33 * 100)
+                b = 0
+            elif normalized < 0.67:
+                r = 255
+                g = int(155 - (normalized - 0.33) / 0.33 * 155)
                 b = 0
             else:
                 r = 255
-                g = int(255 - 100 - (normalized - 0.5) * 2 * 155)
+                g = int((1 - normalized) / 0.33 * 100)
                 b = 0
-            return f"#{r:02x}{g:02x}{b:02x}"
+            
         elif color_config["colormap"] == "Reds":
-            r = int(normalized * 255)
-            g = 0
-            b = 0
-            return f"#{r:02x}{g:02x}{b:02x}"
+            # Blanco a Rojo
+            r = int(100 + normalized * 155)  # 100-255
+            g = int(100 - normalized * 100)  # 100-0
+            b = int(100 - normalized * 100)  # 100-0
+            
         elif color_config["colormap"] == "Blues":
-            r = 0
-            g = 0
-            b = int(normalized * 255)
-            return f"#{r:02x}{g:02x}{b:02x}"
-        return "#cccccc"
+            # Blanco a Azul
+            r = int(100 - normalized * 100)  # 100-0
+            g = int(100 - normalized * 100)  # 100-0
+            b = int(100 + normalized * 155)  # 100-255
+        else:
+            r = int(200 * normalized)
+            g = int(200 * normalized)
+            b = int(200 * normalized)
+        
+        return f"#{int(r):02x}{int(g):02x}{int(b):02x}"
 
-    # Agregar features GeoJSON al mapa
-    for idx, row in gdf.iterrows():
-        feature_geojson = gpd.GeoSeries([row.geometry]).__geo_interface__["features"][0]
-
-        value = row[column]
+    # Agregar features GeoJSON al mapa (usando WGS84)
+    for idx, row in gdf_wgs84.iterrows():
+        # Obtener el valor del GeoDataFrame original (mismo índice)
+        value = gdf.loc[idx, column]
         color = get_feature_color(value)
         formatted_value = color_config["tooltip_format"].format(value)
 
@@ -245,9 +271,22 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
         </div>
         """
 
+        # Crear GeoJSON feature desde geometría WGS84
+        feature = {
+            "type": "Feature",
+            "geometry": row.geometry.__geo_interface__,
+            "properties": {"name": corr_name}
+        }
+
         folium.GeoJson(
-            data=feature_geojson,
-            style_function=lambda x, color=color: {"fillColor": color, "weight": 0.5},
+            data=feature,
+            style_function=lambda x, color=color: {
+                "fillColor": color, 
+                "color": "#333333",
+                "weight": 0.5,
+                "opacity": 0.7,
+                "fillOpacity": 0.8
+            },
             popup=folium.Popup(popup_html, max_width=250),
             tooltip=folium.Tooltip(
                 f"{corr_name}: {formatted_value}", sticky=False

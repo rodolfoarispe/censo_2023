@@ -65,6 +65,14 @@ python generar_mapas.py --output-dir ./mapas
 
 **Nota:** El script usa `data/geo/corregimientos.parquet` automáticamente. ✓ No necesita el shapefile externo.
 
+**Características de los mapas:**
+- ✓ Centrado automáticamente en Panamá
+- ✓ Zoom automático para ver todo el país completo
+- ✓ Colores cromáticos por métrica (RdYlGn, YlOrRd, etc)
+- ✓ Tooltips al pasar mouse
+- ✓ Popups con información detallada al hacer click
+- ✓ Tiles CartoDB positron para mejor legibilidad
+
 ## Datos Disponibles
 
 El script carga datos desde:
