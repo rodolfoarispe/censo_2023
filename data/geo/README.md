@@ -4,6 +4,15 @@ Este directorio contiene datos y configuración para generar mapas interactivos 
 
 ## Archivos
 
+### `corregimientos.parquet` ⭐
+Datos geográficos de corregimientos en formato GeoParquet (35 MB).
+
+**Características:**
+- Contiene geometría completa (Polygon + MultiPolygon)
+- Datos de cobertura vs pobreza pre-calculados
+- Formato eficiente y portable (no necesita shapefile externo)
+- Cargado automáticamente por scripts
+
 ### `ID_CORR_mapping.json`
 Mapeo de discrepancias entre el shapefile de corregimientos y los datos de la BD.
 
@@ -48,13 +57,19 @@ python choropleth_cobertura.py --metric pobreza_extrema --output mapa_pobreza_ex
 python choropleth_cobertura.py --metric pobreza_general --output mapa_pobreza_general.html
 
 # Mostrar en navegador
-python choropleth_cobertura.py --metric cobertura --output mapa_cobertura.html --show
+python choropleth_cobertura.py --metric cobertura --show
+
+# Generar todos los mapas
+python generar_mapas.py --output-dir ./mapas
 ```
+
+**Nota:** El script usa `data/geo/corregimientos.parquet` automáticamente. ✓ No necesita el shapefile externo.
 
 ## Datos Disponibles
 
 El script carga datos desde:
-- **Geometría**: Shapefile en `/home/rodolfoarispe/Descargas/Panama_Corregimientos_Boundaries_2024/`
+- **Geometría**: `corregimientos.parquet` (este directorio)
+  - Fallback: Shapefile en `/home/rodolfoarispe/Descargas/...` si GeoParquet no existe
 - **BD**: `censo_2023.duckdb` (tabla `mapa_pobreza` + `planilla`)
 
 Métricas por corregimiento:
@@ -68,15 +83,17 @@ Métricas por corregimiento:
 
 ## Próximos Pasos (Optimizaciones)
 
-1. **GeoParquet**: Convertir shapefile a formato parquet (1-2 MB vs 39 MB)
-   - Requiere: `pip install pyarrow`
-   - Beneficio: Carga más rápida, menor espacio
+1. **Simplificación de geometría**: Reducir coordenadas para disminuir tamaño (5-10 MB)
+   - Trade-off: precisión vs tamaño
+   - Beneficio: Mapas HTML más pequeños (~5-10 MB vs 97 MB)
 
 2. **Tiles personalizados**: Usar tiles de Mapbox o similar para mejor visualización
 
 3. **Filtros interactivos**: Agregar controles para filtrar por provincia, distrito, rango de cobertura
 
 4. **Exportar a TopoJSON**: Reducir tamaño para sitios web estáticos
+
+5. **Dashboard web**: Integrar con Folium Server o Streamlit para análisis interactivo
 
 ## Notas Técnicas
 

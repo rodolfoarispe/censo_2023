@@ -26,14 +26,25 @@ import pandas as pd
 import webbrowser
 import tempfile
 
-# Configuración de shapefile
+# Configuración
+GEOPARQUET_PATH = "data/geo/corregimientos.parquet"
 SHAPEFILE_PATH = "/home/rodolfoarispe/Descargas/Panama_Corregimientos_Boundaries_2024/Corregimientos_2024.shp"
 DB_PATH = "censo_2023.duckdb"
 
 
 def load_data():
-    """Carga shapefile y datos de BD"""
-    print("📥 Cargando shapefile...")
+    """Carga datos geográficos desde GeoParquet (o shapefile si no existe)"""
+    import os
+
+    # Intentar cargar GeoParquet primero (más eficiente)
+    if os.path.exists(GEOPARQUET_PATH):
+        print(f"📥 Cargando {GEOPARQUET_PATH}...")
+        gdf = gpd.read_parquet(GEOPARQUET_PATH)
+        print(f"   ✓ {len(gdf)} corregimientos cargados")
+        return gdf
+
+    # Fallback: cargar shapefile y crear GeoParquet
+    print("📥 Cargando shapefile (no se encontró GeoParquet)...")
     gdf = gpd.read_file(SHAPEFILE_PATH)
     gdf["id_corr_int"] = gdf["ID_CORR"].astype(int)
 
@@ -48,6 +59,9 @@ def load_data():
             m.provincia,
             m.distrito,
             m.corregimiento,
+            m.codigo_provincia,
+            m.codigo_distrito,
+            m.codigo_corregimiento,
             m.total_personas,
             m.pct_pobreza_general_personas,
             m.pct_pobreza_extrema_personas,
@@ -85,10 +99,11 @@ def load_data():
     # Renombrar para claridad
     gdf = gdf.rename(
         columns={
-            "Provincia": "provincia_shapefile",
-            "Distrito": "distrito_shapefile",
-            "Corregimie": "corregimiento_shapefile",
+            "Provincia": "provincia_nombre",
+            "Distrito": "distrito_nombre",
+            "Corregimie": "corregimiento_nombre",
             "Area_HA": "area_hectareas",
+            "ID_CORR": "id_corr_str",
         }
     )
 
@@ -212,11 +227,16 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
         color = get_feature_color(value)
         formatted_value = color_config["tooltip_format"].format(value)
 
+        # Usar nombre de corregimiento (compatibilidad con GeoParquet y shapefile)
+        corr_name = row.get('corregimiento_nombre') or row.get('corregimiento', 'N/A')
+        dist_name = row.get('distrito_nombre') or row.get('distrito', 'N/A')
+        prov_name = row.get('provincia_nombre') or row.get('provincia', 'N/A')
+
         # Crear popup con información
         popup_html = f"""
         <div style="font-family: Arial; font-size: 12px; width: 200px;">
-            <b>{row['corregimiento']}</b><br>
-            {row['distrito']}, {row['provincia']}<br>
+            <b>{corr_name}</b><br>
+            {dist_name}, {prov_name}<br>
             <hr style="margin: 5px 0;">
             <b>{color_config['name']}:</b> {formatted_value}<br>
             <b>Pobres totales:</b> {row['pobres_total']:,.0f}<br>
@@ -230,7 +250,7 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
             style_function=lambda x, color=color: {"fillColor": color, "weight": 0.5},
             popup=folium.Popup(popup_html, max_width=250),
             tooltip=folium.Tooltip(
-                f"{row['corregimiento']}: {formatted_value}", sticky=False
+                f"{corr_name}: {formatted_value}", sticky=False
             ),
         ).add_to(m)
 
