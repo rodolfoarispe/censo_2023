@@ -308,8 +308,8 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
             <!-- CONTEXTO DEMOGRÁFICO -->
             <div style="margin-bottom: 8px;">
                 <b style="color: #333;">Población Total:</b> {row['total_personas']:,.0f}<br>
-                <b style="color: #d9534f;">Pobres Extremos:</b> {row['pobres_extremos']:,.0f} ({row['pct_pobreza_extrema_personas']*100:.1f}%)<br>
-                <b style="color: #f0ad4e;">Pobres Generales:</b> {row['pobres_general']:,.0f} ({row['pct_pobreza_general_personas']*100:.1f}%)<br>
+                <b style="color: #d9534f;">Pobres Extremos:</b> {row['pobres_extremos']:,.0f} ({row['pct_pobreza_extrema_personas']:.1f}%)<br>
+                <b style="color: #f0ad4e;">Pobres Generales:</b> {row['pobres_general']:,.0f} ({row['pct_pobreza_general_personas']:.1f}%)<br>
                 <b style="color: #5bc0de;">Menores de 18:</b> {menores_18:,.0f}
             </div>
             
