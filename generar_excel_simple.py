@@ -198,6 +198,55 @@ def generar_excel_simple(db_path, output_file):
     """
     
     df_sobreatencion = con.execute(query_sobreatencion).fetchdf()
+
+    # Query gap de menores
+    print("  🧒 Procesando brecha de menores...")
+    query_gap_menores = """
+    WITH menores_censo AS (
+        SELECT
+            CONCAT(
+                LPAD(PROVINCIA, 2, '0'),
+                LPAD(DISTRITO, 2, '0'),
+                LPAD(CORREG, 2, '0')
+            )::BIGINT as id_correg,
+            COUNT(*) as menores_18_censo
+        FROM personas
+        WHERE P03_EDAD IS NOT NULL AND CAST(P03_EDAD AS INTEGER) < 18
+        GROUP BY PROVINCIA, DISTRITO, CORREG
+    ),
+    menores_planilla AS (
+        SELECT
+            id_correg,
+            SUM(COALESCE(Menores_18, 0)) as menores_18_beneficiarios,
+            COUNT(*) as beneficiarios_total
+        FROM planilla
+        GROUP BY id_correg
+    ),
+    id_correg_mapa AS (
+        SELECT
+            *,
+            (codigo_provincia * 10000 + codigo_distrito * 100 + codigo_corregimiento) as id_correg_calc
+        FROM mapa_pobreza
+        WHERE total_personas > 0
+    )
+    SELECT
+        m.provincia,
+        m.distrito,
+        m.corregimiento,
+        COALESCE(c.menores_18_censo, 0) as menores_18_censo,
+        COALESCE(p.menores_18_beneficiarios, 0) as menores_18_beneficiarios,
+        ROUND(COALESCE(p.menores_18_beneficiarios, 0) * 100.0 /
+              NULLIF(c.menores_18_censo, 0), 1) as cobertura_menores_pct,
+        ROUND(COALESCE(c.menores_18_censo, 0) - COALESCE(p.menores_18_beneficiarios, 0)) as gap_menores
+    FROM id_correg_mapa m
+    LEFT JOIN menores_censo c ON m.id_correg_calc = c.id_correg
+    LEFT JOIN menores_planilla p ON m.id_correg_calc = p.id_correg
+    WHERE COALESCE(c.menores_18_censo, 0) > 0
+    ORDER BY gap_menores DESC
+    """
+
+    df_gap_menores = con.execute(query_gap_menores).fetchdf()
+    df_gap_menores = df_gap_menores.head(50).copy()
     
     con.close()
     
@@ -216,11 +265,14 @@ def generar_excel_simple(db_path, output_file):
         
         # Hoja 4: Casos de Sobreatención
         df_sobreatencion.to_excel(writer, sheet_name='Sobreatención', index=False)
-        
-        # Hoja 5: Análisis completo (todos los corregimientos)
+
+        # Hoja 5: Gap de menores
+        df_gap_menores.to_excel(writer, sheet_name='Gap Menores', index=False)
+
+        # Hoja 6: Análisis completo (todos los corregimientos)
         df_principal.to_excel(writer, sheet_name='Análisis Completo', index=False)
-        
-        # Hoja 6: Resumen actualizado
+
+        # Hoja 7: Resumen actualizado
         resumen_data = {
             'Indicador': [
                 'Total Corregimientos Analizados',
@@ -272,11 +324,12 @@ if __name__ == "__main__":
             # Mostrar estadísticas
             file_size = Path(output_file).stat().st_size / (1024 * 1024)
             print(f"📁 Tamaño: {file_size:.1f} MB")
-            print(f"📊 6 hojas incluidas:")
+            print(f"📊 7 hojas incluidas:")
             print(f"   • Top 50 Brechas")
             print(f"   • Casos Críticos")  
             print(f"   • Por Provincia")
             print(f"   • Sobreatención")
+            print(f"   • Gap Menores")
             print(f"   • Análisis Completo")
             print(f"   • Resumen Ejecutivo")
         else:

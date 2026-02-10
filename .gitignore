@@ -13,7 +13,8 @@ __pycache__/
 *.csv
 
 # Carpetas de outputs generados (archivos temporales grandes)
-/mapas/
+/mapas/*
+!/mapas/README.md
 /reportes/
 
 # Insumos geograficos crudos y backups locales

@@ -12,6 +12,9 @@ Uso:
     # Mapa de pobreza extrema
     python choropleth_cobertura.py --metric pobreza_extrema --output mapa_pobreza_extrema.html
 
+    # Mapa de cobertura de menores de 18 años
+    python choropleth_cobertura.py --metric cobertura_menores --output mapa_cobertura_menores.html
+
     # Mostrar en navegador
     python choropleth_cobertura.py --metric cobertura --output mapa.html --show
 """
@@ -98,6 +101,13 @@ def load_data():
         # Llenar NaN con 0
         for col in ['benef_angel_guardian', 'benef_120_65', 'benef_red_oportunidades', 'benef_senapan', 'menores_18_beneficiarios', 'menores_18_censo']:
             gdf[col] = gdf[col].fillna(0).astype('int64')
+
+        gdf["cobertura_menores_pct"] = (
+            (gdf["menores_18_beneficiarios"] / gdf["menores_18_censo"] * 100)
+            .replace([float("inf"), float("-inf")], 0)
+            .fillna(0)
+            .round(2)
+        )
         print(f"   ✓ Datos desglosados agregados")
         
         return gdf
@@ -154,6 +164,16 @@ def load_data():
     gdf["cobertura_pct"] = (
         (gdf["beneficiarios_total"] / gdf["pobres_total"] * 100).fillna(0).round(2)
     )
+    
+    # Cobertura de menores de 18 años
+    gdf["menores_18_censo"] = gdf["menores_18_censo"].fillna(0).astype("int64")
+    gdf["menores_18_beneficiarios"] = gdf["menores_18_beneficiarios"].fillna(0).astype("int64")
+    gdf["cobertura_menores_pct"] = (
+        (gdf["menores_18_beneficiarios"] / gdf["menores_18_censo"] * 100)
+        .replace([float("inf"), float("-inf")], 0)
+        .fillna(0)
+        .round(2)
+    )
 
     # Renombrar para claridad
     gdf = gdf.rename(
@@ -205,6 +225,15 @@ def get_color_scale(metric):
             "vmin": 0,
             "vmax": None,
             "colormap": "Blues",
+            "tooltip_format": "{:.2f}%",
+        }
+    elif metric == "cobertura_menores":
+        return {
+            "name": "Cobertura de Menores de 18 años (%)",
+            "column": "cobertura_menores_pct",
+            "vmin": 0,
+            "vmax": 100,
+            "colormap": "RdYlGn",  # Rojo -> Amarillo -> Verde
             "tooltip_format": "{:.2f}%",
         }
     else:
@@ -711,7 +740,7 @@ def main():
     parser.add_argument(
         "--metric",
         default="cobertura",
-        choices=["cobertura", "gap", "pobreza_general", "pobreza_extrema"],
+        choices=["cobertura", "gap", "pobreza_general", "pobreza_extrema", "cobertura_menores"],
         help="Métrica a visualizar",
     )
     parser.add_argument(

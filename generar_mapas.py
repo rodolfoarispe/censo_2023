@@ -41,6 +41,11 @@ def generate_all_maps(output_dir="."):
             "description": "Porcentaje de pobreza extrema",
             "color": "⚫"
         },
+        {
+            "name": "cobertura_menores",
+            "description": "Cobertura de menores de 18 años",
+            "color": "🟣"
+        },
     ]
 
     print("╔════════════════════════════════════════════════════════════╗")
