@@ -313,8 +313,8 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
             <span>Bajo ({vmin:.0f} - {vmax * 0.5:.0f})</span>
         </div>
         <p style="margin: 10px 0 0 0; font-size: 10px; color: #666;">
-            Datos: Censo 2023<br>
-            Actualizado: Feb 2026
+            Datos: Censo/MDP 2023<br>
+            Planilla: 20261
         </p>
     </div>
     """
