@@ -15,3 +15,8 @@ __pycache__/
 # Generated map files (temporal)
 mapa_*.html
 *.html
+
+# Insumos geograficos crudos y backups locales
+DIVISION POLITICA2023/
+data/geo/corregimientos.parquet.backup
+data/geo/corregimientos.parquet.backup_old
