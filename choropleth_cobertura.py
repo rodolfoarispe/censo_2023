@@ -32,6 +32,27 @@ SHAPEFILE_PATH = "/home/rodolfoarispe/Descargas/Panama_Corregimientos_Boundaries
 DB_PATH = "censo_2023.duckdb"
 
 
+def load_detailed_beneficiaries():
+    """Carga datos desglosados de beneficiarios por programa y menores de 18"""
+    conn = duckdb.connect(DB_PATH)
+    
+    # Query: beneficiarios por programa y menores de 18 por corregimiento
+    detailed_data = conn.execute("""
+        SELECT 
+            id_correg,
+            COALESCE(SUM(CASE WHEN Programa = 'ANGEL GUARDIAN' THEN 1 ELSE 0 END), 0) as benef_angel_guardian,
+            COALESCE(SUM(CASE WHEN Programa = 'B/. 120 A LOS 65' THEN 1 ELSE 0 END), 0) as benef_120_65,
+            COALESCE(SUM(CASE WHEN Programa = 'RED DE OPORTUNIDADES' THEN 1 ELSE 0 END), 0) as benef_red_oportunidades,
+            COALESCE(SUM(CASE WHEN Programa = 'SENAPAN' THEN 1 ELSE 0 END), 0) as benef_senapan,
+            COALESCE(SUM(Menores_18), 0) as total_menores_18
+        FROM planilla
+        GROUP BY id_correg
+    """).df()
+    
+    conn.close()
+    return detailed_data
+
+
 def load_data():
     """Carga datos geográficos desde GeoParquet (o shapefile si no existe)"""
     import os
@@ -41,6 +62,16 @@ def load_data():
         print(f"📥 Cargando {GEOPARQUET_PATH}...")
         gdf = gpd.read_parquet(GEOPARQUET_PATH)
         print(f"   ✓ {len(gdf)} corregimientos cargados")
+        
+        # Enriquecer con datos desglosados
+        print(f"📥 Cargando datos desglosados por programa...")
+        detailed_benef = load_detailed_beneficiaries()
+        gdf = gdf.merge(detailed_benef, left_on='id_corr_int', right_on='id_correg', how='left')
+        # Llenar NaN con 0
+        for col in ['benef_angel_guardian', 'benef_120_65', 'benef_red_oportunidades', 'benef_senapan', 'total_menores_18']:
+            gdf[col] = gdf[col].fillna(0).astype('int64')
+        print(f"   ✓ Datos desglosados agregados")
+        
         return gdf
 
     # Fallback: cargar shapefile y crear GeoParquet
@@ -258,16 +289,53 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
         dist_name = row.get('distrito_nombre') or row.get('distrito', 'N/A')
         prov_name = row.get('provincia_nombre') or row.get('provincia', 'N/A')
 
-        # Crear popup con información
+        # Crear popup con información jerárquica (general a específico)
+        # Obtener valores con defaults para compatibilidad
+        benef_angel = int(row.get('benef_angel_guardian', 0))
+        benef_120_65 = int(row.get('benef_120_65', 0))
+        benef_red_oport = int(row.get('benef_red_oportunidades', 0))
+        benef_senapan = int(row.get('benef_senapan', 0))
+        menores_18 = int(row.get('total_menores_18', 0))
+        
         popup_html = f"""
-        <div style="font-family: Arial; font-size: 12px; width: 200px;">
-            <b>{corr_name}</b><br>
-            {dist_name}, {prov_name}<br>
-            <hr style="margin: 5px 0;">
-            <b>{color_config['name']}:</b> {formatted_value}<br>
-            <b>Pobres totales:</b> {row['pobres_total']:,.0f}<br>
-            <b>Beneficiarios:</b> {row['beneficiarios_total']:,.0f}<br>
-            <b>Gap:</b> {row['gap']:,.0f}<br>
+        <div style="font-family: Arial; font-size: 11px; width: 280px;">
+            <!-- UBICACIÓN -->
+            <div style="background-color: #f5f5f5; padding: 5px; border-radius: 3px; margin-bottom: 8px;">
+                <b style="font-size: 13px;">{corr_name}</b><br>
+                <span style="color: #666;">{dist_name}, {prov_name}</span>
+            </div>
+            
+            <!-- CONTEXTO DEMOGRÁFICO -->
+            <div style="margin-bottom: 8px;">
+                <b style="color: #333;">Población Total:</b> {row['total_personas']:,.0f}<br>
+                <b style="color: #d9534f;">Pobres Extremos:</b> {row['pobres_extremos']:,.0f} ({row['pct_pobreza_extrema_personas']*100:.1f}%)<br>
+                <b style="color: #f0ad4e;">Pobres Generales:</b> {row['pobres_general']:,.0f} ({row['pct_pobreza_general_personas']*100:.1f}%)<br>
+                <b style="color: #5bc0de;">Menores de 18:</b> {menores_18:,.0f}
+            </div>
+            
+            <hr style="margin: 6px 0; border: none; border-top: 1px solid #ddd;">
+            
+            <!-- COBERTURA DE PROGRAMAS -->
+            <div style="margin-bottom: 8px;">
+                <b style="color: #333;">Beneficiarios Totales:</b> {row['beneficiarios_total']:,.0f}<br>
+                <b style="color: #27ae60;">{color_config['name']}:</b> {formatted_value}
+            </div>
+            
+            <!-- DESGLOSE POR PROGRAMA -->
+            <div style="background-color: #fffacd; padding: 5px; border-left: 3px solid #ffc107; margin-bottom: 8px;">
+                <b style="font-size: 10px; color: #333;">Beneficiarios por Programa:</b><br>
+                <span style="font-size: 10px;">
+                    • B/. 120 a los 65: {benef_120_65:,.0f}<br>
+                    • Red de Oportunidades: {benef_red_oport:,.0f}<br>
+                    • Ángel Guardián: {benef_angel:,.0f}<br>
+                    • SENAPAN: {benef_senapan:,.0f}
+                </span>
+            </div>
+            
+            <!-- GAP DE COBERTURA -->
+            <div style="background-color: #ffe6e6; padding: 5px; border-left: 3px solid #dc3545; margin-bottom: 4px;">
+                <b style="color: #c82333;">Gap (Sin Cobertura):</b> {row['gap']:,.0f}
+            </div>
         </div>
         """
 

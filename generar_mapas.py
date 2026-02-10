@@ -104,8 +104,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Genera todos los mapas interactivos")
     parser.add_argument(
         "--output-dir",
-        default=".",
-        help="Directorio de salida (default: .)",
+        default="./mapas",
+        help="Directorio de salida (default: ./mapas)",
     )
 
     args = parser.parse_args()
