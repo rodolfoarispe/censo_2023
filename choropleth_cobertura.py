@@ -373,7 +373,13 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
         feature = {
             "type": "Feature",
             "geometry": row.geometry.__geo_interface__,
-            "properties": {"name": corr_name}
+            "properties": {
+                "name": corr_name,
+                "corregimiento_nombre": corr_name,
+                "corregimiento": corr_name,
+                "distrito_nombre": dist_name,
+                "provincia_nombre": prov_name
+            }
         }
 
         folium.GeoJson(
@@ -652,31 +658,51 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
                             }}
                         }}
                         
-                        // Si encontramos el layer, hacer click para mostrar popup
+                        // Si encontramos el layer, abrir popup
                         if (foundLayer) {{
-                            console.log('🖱️ Disparando click en layer encontrado');
+                            console.log('🖱️ Abriendo popup del layer encontrado');
                             
-                            // Intentar diferentes métodos para abrir el popup
-                            if (foundLayer._path) {{
-                                // Es una ruta SVG, hacer click en ella
-                                var event = new MouseEvent('click', {{
-                                    bubbles: true,
-                                    cancelable: true,
-                                    view: window
-                                }});
-                                foundLayer._path.dispatchEvent(event);
-                                console.log('📍 Click disparado en _path');
-                            }} else if (foundLayer.openPopup && typeof foundLayer.openPopup === 'function') {{
-                                // Abrir popup directamente
-                                foundLayer.openPopup([coords.lat, coords.lon]);
-                                console.log('📍 Popup abierto con openPopup()');
+                            // Método 1: Intentar abrir popup existente
+                            if (foundLayer.getPopup) {{
+                                var popup = foundLayer.getPopup();
+                                if (popup) {{
+                                    console.log('📍 Popup existente encontrado, abriendo...');
+                                    foundLayer.openPopup();
+                                    console.log('✅ Popup abierto exitosamente');
+                                }} else {{
+                                    console.log('⚠️ Layer no tiene popup vinculado');
+                                }}
                             }} else {{
-                                console.log('⚠️ No se pudo abrir popup - layer sin _path ni openPopup');
+                                console.log('⚠️ Layer sin método getPopup()');
+                            }}
+                            
+                            // Hacer que el layer sea visible (resaltar)
+                            if (foundLayer.setStyle) {{
+                                foundLayer.setStyle({{
+                                    weight: 3,
+                                    opacity: 1,
+                                    fillOpacity: 0.9
+                                }});
+                                console.log('🎨 Layer resaltado');
                             }}
                         }} else {{
                             console.log('❌ Layer no encontrado para:', corregimientoNombre);
+                            console.log('🔎 Intentando matching exacto nuevamente...');
+                            // Segunda búsqueda: intenta match parcial
+                            if (leafletMap._layers) {{
+                                for (var layerId in leafletMap._layers) {{
+                                    var layer = leafletMap._layers[layerId];
+                                    if (layer.feature && layer.feature.properties) {{
+                                        var props = layer.feature.properties;
+                                        console.log('📝 Properties encontradas:', Object.keys(props));
+                                        console.log('   → name:', props['name']);
+                                        console.log('   → corregimiento:', props['corregimiento']);
+                                        console.log('   → corregimiento_nombre:', props['corregimiento_nombre']);
+                                    }}
+                                }}
+                            }}
                         }}
-                    }}, 200);
+                    }}, 300);
                 }} else {{
                     console.log('❌ No se pudo hacer zoom - mapa no disponible');
                 }}
