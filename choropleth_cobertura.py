@@ -393,10 +393,24 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
 
     # Preparar datos para búsqueda (Provincia → Distrito → Corregimiento)
     provincias_data = {}
+    corregimientos_coords = {}  # Guardar coordenadas para búsqueda
+    
     for idx, row in gdf.iterrows():
         prov_name = row.get('provincia_nombre') or row.get('provincia', 'N/A')
         dist_name = row.get('distrito_nombre') or row.get('distrito', 'N/A')
         corr_name = row.get('corregimiento_nombre') or row.get('corregimiento', 'N/A')
+        
+        # Calcular centroide en WGS84 (coordenadas del mapa)
+        try:
+            centroide_wgs84 = row.geometry.centroid
+            lat = centroide_wgs84.y
+            lon = centroide_wgs84.x
+        except:
+            lat = center_lat
+            lon = center_lon
+        
+        # Guardar corregimiento con sus coordenadas
+        corregimientos_coords[corr_name] = {'lat': lat, 'lon': lon}
         
         if prov_name not in provincias_data:
             provincias_data[prov_name] = {}
@@ -405,13 +419,14 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
         if corr_name not in provincias_data[prov_name][dist_name]:
             provincias_data[prov_name][dist_name].append({
                 'name': corr_name,
-                'lat': row.geometry.centroid.y if hasattr(row.geometry, 'centroid') else center_lat,
-                'lon': row.geometry.centroid.x if hasattr(row.geometry, 'centroid') else center_lon
+                'lat': lat,
+                'lon': lon
             })
     
     # Convertir a JSON para JavaScript
     import json
     provincias_json = json.dumps(provincias_data)
+    corregimientos_coords_json = json.dumps(corregimientos_coords)
     
     # Agregar panel de búsqueda en esquina superior izquierda
     search_panel_html = f"""
@@ -455,30 +470,14 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
     """
     m.get_root().html.add_child(folium.Element(search_panel_html))
     
-    # Agregar JavaScript para interactividad de búsqueda
+    # Agregar JavaScript para interactividad de búsqueda (SIMPLIFICADO)
     search_script = f"""
     <script>
     var provinciasData = {provincias_json};
-    var mapInstance = null;
+    var corregimientosCoords = {corregimientos_coords_json};
     
-    // Función para obtener el mapa de Folium/Leaflet
-    function obtenerMapa() {{
-        // Intentar diferentes formas de acceder al mapa
-        if (window.map) return window.map;
-        if (typeof map !== 'undefined') return map;
-        
-        // Buscar en el objeto document
-        var containers = document.querySelectorAll('[id^="map"]');
-        for (var i = 0; i < containers.length; i++) {{
-            if (containers[i]._leaflet_map) return containers[i]._leaflet_map;
-        }}
-        return null;
-    }}
-    
-    // Esperar a que el mapa esté completamente cargado
+    // Inicializar búsqueda
     function inicializarBusqueda() {{
-        mapInstance = obtenerMapa();
-        
         var provinciaSelect = document.getElementById('provincia-select');
         var distritosSelect = document.getElementById('distrito-select');
         var corregimientosSelect = document.getElementById('corregimiento-select');
@@ -489,7 +488,7 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
             return;
         }}
         
-        // Agregar provincias al dropdown
+        // Llenar provincias
         Object.keys(provinciasData).sort().forEach(function(provincia) {{
             var option = document.createElement('option');
             option.value = provincia;
@@ -497,7 +496,7 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
             provinciaSelect.appendChild(option);
         }});
         
-        // Evento: cambio de provincia
+        // Cambio de provincia
         provinciaSelect.addEventListener('change', function() {{
             distritosSelect.innerHTML = '<option value="">-- Seleccionar Distrito --</option>';
             corregimientosSelect.innerHTML = '<option value="">-- Seleccionar Corregimiento --</option>';
@@ -510,8 +509,7 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
             }}
             
             distritosSelect.disabled = false;
-            var provincia = this.value;
-            Object.keys(provinciasData[provincia]).sort().forEach(function(distrito) {{
+            Object.keys(provinciasData[this.value]).sort().forEach(function(distrito) {{
                 var option = document.createElement('option');
                 option.value = distrito;
                 option.text = distrito;
@@ -519,7 +517,7 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
             }});
         }});
         
-        // Evento: cambio de distrito
+        // Cambio de distrito
         distritosSelect.addEventListener('change', function() {{
             corregimientosSelect.innerHTML = '<option value="">-- Seleccionar Corregimiento --</option>';
             zoomButton.disabled = true;
@@ -530,41 +528,53 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
             }}
             
             corregimientosSelect.disabled = false;
-            var provincia = provinciaSelect.value;
-            var distrito = this.value;
-            var corregimientos = provinciasData[provincia][distrito];
-            
+            var corregimientos = provinciasData[provinciaSelect.value][this.value];
             corregimientos.forEach(function(correg) {{
                 var option = document.createElement('option');
-                option.value = JSON.stringify(correg);
+                option.value = correg.name;
                 option.text = correg.name;
                 corregimientosSelect.appendChild(option);
             }});
         }});
         
-        // Evento: cambio de corregimiento
+        // Cambio de corregimiento
         corregimientosSelect.addEventListener('change', function() {{
             zoomButton.disabled = (this.value === '');
         }});
         
-        // Evento: botón zoom
+        // Click en botón: buscar el GeoJSON y hacer zoom
         zoomButton.addEventListener('click', function() {{
-            if (corregimientosSelect.value === '') return;
+            var corregimientoNombre = corregimientosSelect.value;
+            if (!corregimientoNombre) return;
             
-            var correg = JSON.parse(corregimientosSelect.value);
+            var coords = corregimientosCoords[corregimientoNombre];
+            if (!coords) return;
             
-            // Intentar obtener el mapa nuevamente si aún no lo tenemos
-            if (!mapInstance) {{
-                mapInstance = obtenerMapa();
-            }}
+            // Buscar en Leaflet todos los layers y encontrar el que matches
+            var layersControl = document.querySelectorAll('.leaflet-interactive');
+            layersControl.forEach(function(layer) {{
+                // Disparar un evento mouseover para activar tooltip y luego click para popup
+                var event = new MouseEvent('click', {{
+                    bubbles: true,
+                    cancelable: true,
+                    view: window
+                }});
+                layer.dispatchEvent(event);
+            }});
             
-            if (mapInstance && typeof mapInstance.setView === 'function') {{
-                mapInstance.setView([correg.lat, correg.lon], 10);
-            }}
+            // Intentar hacer zoom usando la API de Leaflet si está disponible
+            setTimeout(function() {{
+                if (window.map || typeof map !== 'undefined') {{
+                    var leafletMap = window.map || map;
+                    if (leafletMap && typeof leafletMap.setView === 'function') {{
+                        leafletMap.setView([coords.lat, coords.lon], 10);
+                    }}
+                }}
+            }}, 100);
         }});
     }}
     
-    // Inicializar cuando el documento esté listo
+    // Inicializar cuando esté listo
     if (document.readyState === 'loading') {{
         document.addEventListener('DOMContentLoaded', inicializarBusqueda);
     }} else {{
