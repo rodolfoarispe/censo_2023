@@ -391,6 +391,156 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
             ),
         ).add_to(m)
 
+    # Preparar datos para búsqueda (Provincia → Distrito → Corregimiento)
+    provincias_data = {}
+    for idx, row in gdf.iterrows():
+        prov_name = row.get('provincia_nombre') or row.get('provincia', 'N/A')
+        dist_name = row.get('distrito_nombre') or row.get('distrito', 'N/A')
+        corr_name = row.get('corregimiento_nombre') or row.get('corregimiento', 'N/A')
+        
+        if prov_name not in provincias_data:
+            provincias_data[prov_name] = {}
+        if dist_name not in provincias_data[prov_name]:
+            provincias_data[prov_name][dist_name] = []
+        if corr_name not in provincias_data[prov_name][dist_name]:
+            provincias_data[prov_name][dist_name].append({
+                'name': corr_name,
+                'lat': row.geometry.centroid.y if hasattr(row.geometry, 'centroid') else center_lat,
+                'lon': row.geometry.centroid.x if hasattr(row.geometry, 'centroid') else center_lon
+            })
+    
+    # Convertir a JSON para JavaScript
+    import json
+    provincias_json = json.dumps(provincias_data)
+    
+    # Agregar panel de búsqueda en esquina superior izquierda
+    search_panel_html = f"""
+    <div style="position: fixed; 
+            top: 10px; left: 10px; width: 280px; height: auto; 
+            background-color: white; border:2px solid #333; z-index:9999; 
+            font-size:12px; padding: 12px; border-radius: 5px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);">
+        
+        <p style="margin: 0 0 8px 0; font-weight: bold; font-size: 13px;">🔍 Buscar Corregimiento</p>
+        
+        <div style="margin-bottom: 8px;">
+            <label style="display: block; font-size: 11px; color: #666; margin-bottom: 2px;">Provincia:</label>
+            <select id="provincia-select" style="width: 100%; padding: 5px; font-size: 11px; border: 1px solid #ccc; border-radius: 3px;">
+                <option value="">-- Seleccionar Provincia --</option>
+            </select>
+        </div>
+        
+        <div style="margin-bottom: 8px;">
+            <label style="display: block; font-size: 11px; color: #666; margin-bottom: 2px;">Distrito:</label>
+            <select id="distrito-select" style="width: 100%; padding: 5px; font-size: 11px; border: 1px solid #ccc; border-radius: 3px;" disabled>
+                <option value="">-- Seleccionar Distrito --</option>
+            </select>
+        </div>
+        
+        <div style="margin-bottom: 8px;">
+            <label style="display: block; font-size: 11px; color: #666; margin-bottom: 2px;">Corregimiento:</label>
+            <select id="corregimiento-select" style="width: 100%; padding: 5px; font-size: 11px; border: 1px solid #ccc; border-radius: 3px;" disabled>
+                <option value="">-- Seleccionar Corregimiento --</option>
+            </select>
+        </div>
+        
+        <button id="zoom-button" style="width: 100%; padding: 6px; background-color: #4CAF50; color: white; border: none; border-radius: 3px; cursor: pointer; font-weight: bold; font-size: 11px;" disabled>
+            📍 Ir a Ubicación
+        </button>
+        
+        <p style="margin: 8px 0 0 0; font-size: 9px; color: #999;">
+            Selecciona provincia, distrito y corregimiento para navegar
+        </p>
+    </div>
+    """
+    m.get_root().html.add_child(folium.Element(search_panel_html))
+    
+    # Agregar JavaScript para interactividad de búsqueda
+    search_script = f"""
+    <script>
+    var provinciasData = {provincias_json};
+    var currentBounds = null;
+    
+    // Llenar dropdown de provincias
+    var provinciaSelect = document.getElementById('provincia-select');
+    var distritosSelect = document.getElementById('distrito-select');
+    var corregimientosSelect = document.getElementById('corregimiento-select');
+    var zoomButton = document.getElementById('zoom-button');
+    
+    // Agregar provincias al dropdown
+    Object.keys(provinciasData).sort().forEach(function(provincia) {{
+        var option = document.createElement('option');
+        option.value = provincia;
+        option.text = provincia;
+        provinciaSelect.appendChild(option);
+    }});
+    
+    // Evento: cambio de provincia
+    provinciaSelect.addEventListener('change', function() {{
+        distritosSelect.innerHTML = '<option value="">-- Seleccionar Distrito --</option>';
+        corregimientosSelect.innerHTML = '<option value="">-- Seleccionar Corregimiento --</option>';
+        corregimientosSelect.disabled = true;
+        zoomButton.disabled = true;
+        
+        if (this.value === '') {{
+            distritosSelect.disabled = true;
+            return;
+        }}
+        
+        distritosSelect.disabled = false;
+        var provincia = this.value;
+        Object.keys(provinciasData[provincia]).sort().forEach(function(distrito) {{
+            var option = document.createElement('option');
+            option.value = distrito;
+            option.text = distrito;
+            distritosSelect.appendChild(option);
+        }});
+    }});
+    
+    // Evento: cambio de distrito
+    distritosSelect.addEventListener('change', function() {{
+        corregimientosSelect.innerHTML = '<option value="">-- Seleccionar Corregimiento --</option>';
+        zoomButton.disabled = true;
+        
+        if (this.value === '') {{
+            corregimientosSelect.disabled = true;
+            return;
+        }}
+        
+        corregimientosSelect.disabled = false;
+        var provincia = provinciaSelect.value;
+        var distrito = this.value;
+        var corregimientos = provinciasData[provincia][distrito];
+        
+        corregimientos.forEach(function(correg) {{
+            var option = document.createElement('option');
+            option.value = JSON.stringify(correg);
+            option.text = correg.name;
+            corregimientosSelect.appendChild(option);
+        }});
+    }});
+    
+    // Evento: cambio de corregimiento
+    corregimientosSelect.addEventListener('change', function() {{
+        zoomButton.disabled = (this.value === '');
+    }});
+    
+    // Evento: botón zoom
+    zoomButton.addEventListener('click', function() {{
+        if (corregimientosSelect.value === '') return;
+        
+        var correg = JSON.parse(corregimientosSelect.value);
+        var map = this._map || window.map;
+        
+        // Encontrar y hacer zoom a través de Leaflet
+        if (typeof map !== 'undefined' && map !== null) {{
+            map.setView([correg.lat, correg.lon], 10);
+        }}
+    }});
+    </script>
+    """
+    m.get_root().html.add_child(folium.Element(search_script))
+
     # Agregar escala de colores (leyenda aproximada)
     legend_html = f"""
     <div style="position: fixed; 
