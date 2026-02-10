@@ -459,84 +459,117 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
     search_script = f"""
     <script>
     var provinciasData = {provincias_json};
-    var currentBounds = null;
+    var mapInstance = null;
     
-    // Llenar dropdown de provincias
-    var provinciaSelect = document.getElementById('provincia-select');
-    var distritosSelect = document.getElementById('distrito-select');
-    var corregimientosSelect = document.getElementById('corregimiento-select');
-    var zoomButton = document.getElementById('zoom-button');
-    
-    // Agregar provincias al dropdown
-    Object.keys(provinciasData).sort().forEach(function(provincia) {{
-        var option = document.createElement('option');
-        option.value = provincia;
-        option.text = provincia;
-        provinciaSelect.appendChild(option);
-    }});
-    
-    // Evento: cambio de provincia
-    provinciaSelect.addEventListener('change', function() {{
-        distritosSelect.innerHTML = '<option value="">-- Seleccionar Distrito --</option>';
-        corregimientosSelect.innerHTML = '<option value="">-- Seleccionar Corregimiento --</option>';
-        corregimientosSelect.disabled = true;
-        zoomButton.disabled = true;
+    // Función para obtener el mapa de Folium/Leaflet
+    function obtenerMapa() {{
+        // Intentar diferentes formas de acceder al mapa
+        if (window.map) return window.map;
+        if (typeof map !== 'undefined') return map;
         
-        if (this.value === '') {{
-            distritosSelect.disabled = true;
+        // Buscar en el objeto document
+        var containers = document.querySelectorAll('[id^="map"]');
+        for (var i = 0; i < containers.length; i++) {{
+            if (containers[i]._leaflet_map) return containers[i]._leaflet_map;
+        }}
+        return null;
+    }}
+    
+    // Esperar a que el mapa esté completamente cargado
+    function inicializarBusqueda() {{
+        mapInstance = obtenerMapa();
+        
+        var provinciaSelect = document.getElementById('provincia-select');
+        var distritosSelect = document.getElementById('distrito-select');
+        var corregimientosSelect = document.getElementById('corregimiento-select');
+        var zoomButton = document.getElementById('zoom-button');
+        
+        if (!provinciaSelect) {{
+            setTimeout(inicializarBusqueda, 100);
             return;
         }}
         
-        distritosSelect.disabled = false;
-        var provincia = this.value;
-        Object.keys(provinciasData[provincia]).sort().forEach(function(distrito) {{
+        // Agregar provincias al dropdown
+        Object.keys(provinciasData).sort().forEach(function(provincia) {{
             var option = document.createElement('option');
-            option.value = distrito;
-            option.text = distrito;
-            distritosSelect.appendChild(option);
+            option.value = provincia;
+            option.text = provincia;
+            provinciaSelect.appendChild(option);
         }});
-    }});
-    
-    // Evento: cambio de distrito
-    distritosSelect.addEventListener('change', function() {{
-        corregimientosSelect.innerHTML = '<option value="">-- Seleccionar Corregimiento --</option>';
-        zoomButton.disabled = true;
         
-        if (this.value === '') {{
+        // Evento: cambio de provincia
+        provinciaSelect.addEventListener('change', function() {{
+            distritosSelect.innerHTML = '<option value="">-- Seleccionar Distrito --</option>';
+            corregimientosSelect.innerHTML = '<option value="">-- Seleccionar Corregimiento --</option>';
             corregimientosSelect.disabled = true;
-            return;
-        }}
-        
-        corregimientosSelect.disabled = false;
-        var provincia = provinciaSelect.value;
-        var distrito = this.value;
-        var corregimientos = provinciasData[provincia][distrito];
-        
-        corregimientos.forEach(function(correg) {{
-            var option = document.createElement('option');
-            option.value = JSON.stringify(correg);
-            option.text = correg.name;
-            corregimientosSelect.appendChild(option);
+            zoomButton.disabled = true;
+            
+            if (this.value === '') {{
+                distritosSelect.disabled = true;
+                return;
+            }}
+            
+            distritosSelect.disabled = false;
+            var provincia = this.value;
+            Object.keys(provinciasData[provincia]).sort().forEach(function(distrito) {{
+                var option = document.createElement('option');
+                option.value = distrito;
+                option.text = distrito;
+                distritosSelect.appendChild(option);
+            }});
         }});
-    }});
-    
-    // Evento: cambio de corregimiento
-    corregimientosSelect.addEventListener('change', function() {{
-        zoomButton.disabled = (this.value === '');
-    }});
-    
-    // Evento: botón zoom
-    zoomButton.addEventListener('click', function() {{
-        if (corregimientosSelect.value === '') return;
         
-        var correg = JSON.parse(corregimientosSelect.value);
-        var map = this._map || window.map;
+        // Evento: cambio de distrito
+        distritosSelect.addEventListener('change', function() {{
+            corregimientosSelect.innerHTML = '<option value="">-- Seleccionar Corregimiento --</option>';
+            zoomButton.disabled = true;
+            
+            if (this.value === '') {{
+                corregimientosSelect.disabled = true;
+                return;
+            }}
+            
+            corregimientosSelect.disabled = false;
+            var provincia = provinciaSelect.value;
+            var distrito = this.value;
+            var corregimientos = provinciasData[provincia][distrito];
+            
+            corregimientos.forEach(function(correg) {{
+                var option = document.createElement('option');
+                option.value = JSON.stringify(correg);
+                option.text = correg.name;
+                corregimientosSelect.appendChild(option);
+            }});
+        }});
         
-        // Encontrar y hacer zoom a través de Leaflet
-        if (typeof map !== 'undefined' && map !== null) {{
-            map.setView([correg.lat, correg.lon], 10);
-        }}
-    }});
+        // Evento: cambio de corregimiento
+        corregimientosSelect.addEventListener('change', function() {{
+            zoomButton.disabled = (this.value === '');
+        }});
+        
+        // Evento: botón zoom
+        zoomButton.addEventListener('click', function() {{
+            if (corregimientosSelect.value === '') return;
+            
+            var correg = JSON.parse(corregimientosSelect.value);
+            
+            // Intentar obtener el mapa nuevamente si aún no lo tenemos
+            if (!mapInstance) {{
+                mapInstance = obtenerMapa();
+            }}
+            
+            if (mapInstance && typeof mapInstance.setView === 'function') {{
+                mapInstance.setView([correg.lat, correg.lon], 10);
+            }}
+        }});
+    }}
+    
+    // Inicializar cuando el documento esté listo
+    if (document.readyState === 'loading') {{
+        document.addEventListener('DOMContentLoaded', inicializarBusqueda);
+    }} else {{
+        inicializarBusqueda();
+    }}
     </script>
     """
     m.get_root().html.add_child(folium.Element(search_script))
