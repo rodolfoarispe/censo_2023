@@ -36,7 +36,7 @@ def load_detailed_beneficiaries():
     """Carga datos desglosados de beneficiarios por programa y menores de 18"""
     conn = duckdb.connect(DB_PATH)
     
-    # Query: beneficiarios por programa y menores de 18 por corregimiento
+    # Query: beneficiarios por programa y menores de 18 de la planilla por corregimiento
     detailed_data = conn.execute("""
         SELECT 
             id_correg,
@@ -44,13 +44,35 @@ def load_detailed_beneficiaries():
             COALESCE(SUM(CASE WHEN Programa = 'B/. 120 A LOS 65' THEN 1 ELSE 0 END), 0) as benef_120_65,
             COALESCE(SUM(CASE WHEN Programa = 'RED DE OPORTUNIDADES' THEN 1 ELSE 0 END), 0) as benef_red_oportunidades,
             COALESCE(SUM(CASE WHEN Programa = 'SENAPAN' THEN 1 ELSE 0 END), 0) as benef_senapan,
-            COALESCE(SUM(Menores_18), 0) as total_menores_18
+            COALESCE(SUM(Menores_18), 0) as menores_18_beneficiarios
         FROM planilla
         GROUP BY id_correg
     """).df()
     
     conn.close()
     return detailed_data
+
+
+def load_census_minors():
+    """Carga cantidad de menores de 18 del censo por corregimiento"""
+    conn = duckdb.connect(DB_PATH)
+    
+    # Query: menores de 18 años del censo por corregimiento
+    census_minors = conn.execute("""
+        SELECT 
+            CONCAT(
+                LPAD(PROVINCIA, 2, '0'),
+                LPAD(DISTRITO, 2, '0'),
+                LPAD(CORREG, 2, '0')
+            )::BIGINT as id_correg,
+            COUNT(*) as menores_18_censo
+        FROM personas
+        WHERE CAST(P03_EDAD AS INTEGER) < 18 AND P03_EDAD IS NOT NULL
+        GROUP BY PROVINCIA, DISTRITO, CORREG
+    """).df()
+    
+    conn.close()
+    return census_minors
 
 
 def load_data():
@@ -63,12 +85,18 @@ def load_data():
         gdf = gpd.read_parquet(GEOPARQUET_PATH)
         print(f"   ✓ {len(gdf)} corregimientos cargados")
         
-        # Enriquecer con datos desglosados
+        # Enriquecer con datos desglosados de beneficiarios
         print(f"📥 Cargando datos desglosados por programa...")
         detailed_benef = load_detailed_beneficiaries()
         gdf = gdf.merge(detailed_benef, left_on='id_corr_int', right_on='id_correg', how='left')
+        
+        # Enriquecer con menores de 18 del censo
+        print(f"📥 Cargando menores de 18 del censo...")
+        census_minors = load_census_minors()
+        gdf = gdf.merge(census_minors, left_on='id_corr_int', right_on='id_correg', how='left')
+        
         # Llenar NaN con 0
-        for col in ['benef_angel_guardian', 'benef_120_65', 'benef_red_oportunidades', 'benef_senapan', 'total_menores_18']:
+        for col in ['benef_angel_guardian', 'benef_120_65', 'benef_red_oportunidades', 'benef_senapan', 'menores_18_beneficiarios', 'menores_18_censo']:
             gdf[col] = gdf[col].fillna(0).astype('int64')
         print(f"   ✓ Datos desglosados agregados")
         
@@ -295,7 +323,8 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
         benef_120_65 = int(row.get('benef_120_65', 0))
         benef_red_oport = int(row.get('benef_red_oportunidades', 0))
         benef_senapan = int(row.get('benef_senapan', 0))
-        menores_18 = int(row.get('total_menores_18', 0))
+        menores_18_censo = int(row.get('menores_18_censo', 0))
+        menores_18_benef = int(row.get('menores_18_beneficiarios', 0))
         
         popup_html = f"""
         <div style="font-family: Arial; font-size: 11px; width: 280px;">
@@ -305,12 +334,12 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
                 <span style="color: #666;">{dist_name}, {prov_name}</span>
             </div>
             
-            <!-- CONTEXTO DEMOGRÁFICO -->
+            <!-- CONTEXTO DEMOGRÁFICO (General a Específico) -->
             <div style="margin-bottom: 8px;">
                 <b style="color: #333;">Población Total:</b> {row['total_personas']:,.0f}<br>
                 <b style="color: #d9534f;">Pobres Extremos:</b> {row['pobres_extremos']:,.0f} ({row['pct_pobreza_extrema_personas']:.1f}%)<br>
                 <b style="color: #f0ad4e;">Pobres Generales:</b> {row['pobres_general']:,.0f} ({row['pct_pobreza_general_personas']:.1f}%)<br>
-                <b style="color: #5bc0de;">Menores de 18:</b> {menores_18:,.0f}
+                <b style="color: #5bc0de;">Menores de 18 (Censo):</b> {menores_18_censo:,.0f}
             </div>
             
             <hr style="margin: 6px 0; border: none; border-top: 1px solid #ddd;">
@@ -321,7 +350,7 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
                 <b style="color: #27ae60;">{color_config['name']}:</b> {formatted_value}
             </div>
             
-            <!-- DESGLOSE POR PROGRAMA -->
+            <!-- DESGLOSE POR PROGRAMA Y MENORES BENEFICIARIOS -->
             <div style="background-color: #fffacd; padding: 5px; border-left: 3px solid #ffc107; margin-bottom: 8px;">
                 <b style="font-size: 10px; color: #333;">Beneficiarios por Programa:</b><br>
                 <span style="font-size: 10px;">
@@ -329,7 +358,8 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
                     • Red de Oportunidades: {benef_red_oport:,.0f}<br>
                     • Ángel Guardián: {benef_angel:,.0f}<br>
                     • SENAPAN: {benef_senapan:,.0f}
-                </span>
+                </span><br>
+                <b style="font-size: 10px; color: #333;">Menores de 18:</b> <span style="font-size: 10px;">{menores_18_benef:,.0f}</span>
             </div>
             
             <!-- GAP DE COBERTURA -->
