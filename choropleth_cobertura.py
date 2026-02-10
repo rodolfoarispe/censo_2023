@@ -625,19 +625,56 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
                     console.log('✅ Zoom ejecutado a:', coords.lat, coords.lon);
                     leafletMap.setView([coords.lat, coords.lon], 10);
                     
-                    // Intentar hacer click en el GeoJSON para mostrar popup
+                    // Buscar y abrir popup del corregimiento
                     setTimeout(function() {{
-                        var geoJsonLayers = document.querySelectorAll('path[class*="leaflet"]');
-                        console.log('📍 Buscando GeoJSON layers para popup:', geoJsonLayers.length);
+                        console.log('🔍 Buscando layer GeoJSON para:', corregimientoNombre);
                         
-                        // Buscar el layer que corresponde al corregimiento
-                        for (var i = 0; i < geoJsonLayers.length; i++) {{
-                            var event = new MouseEvent('click', {{
-                                bubbles: true,
-                                cancelable: true,
-                                view: window
-                            }});
-                            geoJsonLayers[i].dispatchEvent(event);
+                        var foundLayer = null;
+                        
+                        // Buscar en los layers del mapa
+                        if (leafletMap._layers) {{
+                            console.log('📊 Total layers en mapa:', Object.keys(leafletMap._layers).length);
+                            
+                            for (var layerId in leafletMap._layers) {{
+                                var layer = leafletMap._layers[layerId];
+                                
+                                // Verificar si es un layer GeoJSON
+                                if (layer.feature && layer.feature.properties) {{
+                                    var props = layer.feature.properties;
+                                    var layerCorregName = props['corregimiento_nombre'] || props['corregimiento'] || props['name'] || '';
+                                    
+                                    if (layerCorregName.toUpperCase() === corregimientoNombre.toUpperCase()) {{
+                                        foundLayer = layer;
+                                        console.log('✅ Layer encontrado!', layerCorregName);
+                                        break;
+                                    }}
+                                }}
+                            }}
+                        }}
+                        
+                        // Si encontramos el layer, hacer click para mostrar popup
+                        if (foundLayer) {{
+                            console.log('🖱️ Disparando click en layer encontrado');
+                            
+                            // Intentar diferentes métodos para abrir el popup
+                            if (foundLayer._path) {{
+                                // Es una ruta SVG, hacer click en ella
+                                var event = new MouseEvent('click', {{
+                                    bubbles: true,
+                                    cancelable: true,
+                                    view: window
+                                }});
+                                foundLayer._path.dispatchEvent(event);
+                                console.log('📍 Click disparado en _path');
+                            }} else if (foundLayer.openPopup && typeof foundLayer.openPopup === 'function') {{
+                                // Abrir popup directamente
+                                foundLayer.openPopup([coords.lat, coords.lon]);
+                                console.log('📍 Popup abierto con openPopup()');
+                            }} else {{
+                                console.log('⚠️ No se pudo abrir popup - layer sin _path ni openPopup');
+                            }}
+                        }} else {{
+                            console.log('❌ Layer no encontrado para:', corregimientoNombre);
                         }}
                     }}, 200);
                 }} else {{
