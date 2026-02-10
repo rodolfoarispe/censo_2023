@@ -11,10 +11,10 @@ __pycache__/
 
 # Archivos de datos exportados
 *.csv
-*.xlsx
 
-# Carpeta de mapas generados (archivos temporales grandes)
+# Carpetas de outputs generados (archivos temporales grandes)
 /mapas/
+/reportes/
 
 # Insumos geograficos crudos y backups locales
 DIVISION POLITICA2023/
