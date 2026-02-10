@@ -466,11 +466,16 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
             </select>
         </div>
         
-        <button id="zoom-button" style="width: 100%; padding: 6px; background-color: #4CAF50; color: white; border: none; border-radius: 3px; cursor: pointer; font-weight: bold; font-size: 11px;" disabled>
-            📍 Ir a Ubicación
-        </button>
+        <div style="display: flex; gap: 5px; margin-bottom: 8px;">
+            <button id="zoom-button" style="flex: 1; padding: 6px; background-color: #4CAF50; color: white; border: none; border-radius: 3px; cursor: pointer; font-weight: bold; font-size: 11px;" disabled>
+                📍 Ir a Ubicación
+            </button>
+            <button id="clear-button" style="flex: 0.4; padding: 6px; background-color: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer; font-weight: bold; font-size: 11px;">
+                🗑️
+            </button>
+        </div>
         
-        <p style="margin: 8px 0 0 0; font-size: 9px; color: #999;">
+        <p style="margin: 0; font-size: 9px; color: #999;">
             Selecciona provincia, distrito y corregimiento para navegar
         </p>
     </div>
@@ -487,22 +492,23 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
     
     console.log('📍 Corregimientos disponibles:', Object.keys(corregimientosCoords).length);
     
-    // Inicializar búsqueda
-    function inicializarBusqueda() {{
-        console.log('⏱️ Inicializando búsqueda...');
-        
-        var provinciaSelect = document.getElementById('provincia-select');
-        var distritosSelect = document.getElementById('distrito-select');
-        var corregimientosSelect = document.getElementById('corregimiento-select');
-        var zoomButton = document.getElementById('zoom-button');
-        
-        if (!provinciaSelect) {{
-            console.log('⏳ Panel no encontrado, reintentando...');
-            setTimeout(inicializarBusqueda, 100);
-            return;
-        }}
-        
-        console.log('✅ Panel de búsqueda encontrado');
+     // Inicializar búsqueda
+     function inicializarBusqueda() {{
+         console.log('⏱️ Inicializando búsqueda...');
+         
+         var provinciaSelect = document.getElementById('provincia-select');
+         var distritosSelect = document.getElementById('distrito-select');
+         var corregimientosSelect = document.getElementById('corregimiento-select');
+         var zoomButton = document.getElementById('zoom-button');
+         var clearButton = document.getElementById('clear-button');
+         
+         if (!provinciaSelect) {{
+             console.log('⏳ Panel no encontrado, reintentando...');
+             setTimeout(inicializarBusqueda, 100);
+             return;
+         }}
+         
+         console.log('✅ Panel de búsqueda encontrado');
         
         // Llenar provincias
         var provincias = Object.keys(provinciasData).sort();
@@ -629,9 +635,30 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
                 }}
             }}
         }});
-    }}
-    
-    console.log('⏱️ document.readyState:', document.readyState);
+        
+        // Click en botón: limpiar todo
+        clearButton.addEventListener('click', function() {{
+            // Resetear los dropdowns
+            provinciaSelect.value = '';
+            distritosSelect.innerHTML = '<option value="">-- Seleccionar Distrito --</option>';
+            distritosSelect.disabled = true;
+            corregimientosSelect.innerHTML = '<option value="">-- Seleccionar Corregimiento --</option>';
+            corregimientosSelect.disabled = true;
+            zoomButton.disabled = true;
+            
+            // Resetear el layer resaltado
+            if (previousHighlightedLayer && previousHighlightedLayer.setStyle) {{
+                previousHighlightedLayer.setStyle({{
+                    weight: 0.5,
+                    opacity: 0.7,
+                    fillOpacity: 0.8
+                }});
+                previousHighlightedLayer = null;
+            }}
+        }});
+     }}
+     
+     console.log('⏱️ document.readyState:', document.readyState);
     
     // Inicializar cuando esté listo
     if (document.readyState === 'loading') {{
