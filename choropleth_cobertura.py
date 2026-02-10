@@ -565,148 +565,69 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
             console.log('🔘 Botón zoom habilitado:', !zoomButton.disabled);
         }});
         
-        // Click en botón: buscar el GeoJSON y hacer zoom
+        // Variable para guardar el layer previamente resaltado
+        var previousHighlightedLayer = null;
+        
+        // Click en botón: hacer zoom y resaltar corregimiento
         zoomButton.addEventListener('click', function() {{
-            console.log('🔘 ¡Botón clickeado!');
-            
             var corregimientoNombre = corregimientosSelect.value;
-            console.log('🔍 Buscando corregimiento:', corregimientoNombre);
-            
-            if (!corregimientoNombre) {{
-                console.log('❌ No hay corregimiento seleccionado');
-                return;
-            }}
-            
             var coords = corregimientosCoords[corregimientoNombre];
-            console.log('📍 Coordenadas encontradas:', coords);
             
-            if (!coords) {{
-                console.log('❌ Coordenadas no encontradas para:', corregimientoNombre);
+            if (!corregimientoNombre || !coords) {{
                 return;
             }}
             
-            console.log('✅ Intentando zoom a:', coords.lat, coords.lon);
+            // Buscar el mapa en window
+            var leafletMap = null;
+            for (var key in window) {{
+                try {{
+                    if (window[key] && window[key].setView && typeof window[key].setView === 'function') {{
+                        leafletMap = window[key];
+                        break;
+                    }}
+                }} catch(e) {{}}
+            }}
             
-            // Buscar en Leaflet todos los layers y hacer click
-            var layersControl = document.querySelectorAll('.leaflet-interactive');
-            console.log('🎯 Layers encontrados:', layersControl.length);
+            if (!leafletMap) {{
+                return;
+            }}
             
-            layersControl.forEach(function(layer, index) {{
-                var event = new MouseEvent('click', {{
-                    bubbles: true,
-                    cancelable: true,
-                    view: window
+            // Hacer zoom
+            leafletMap.setView([coords.lat, coords.lon], 10);
+            
+            // Resetear el layer previamente resaltado
+            if (previousHighlightedLayer && previousHighlightedLayer.setStyle) {{
+                previousHighlightedLayer.setStyle({{
+                    weight: 0.5,
+                    opacity: 0.7,
+                    fillOpacity: 0.8
                 }});
-                layer.dispatchEvent(event);
-            }});
+            }}
             
-            // Intentar hacer zoom - buscar el mapa en variables globales
-            setTimeout(function() {{
-                var leafletMap = null;
-                
-                // Buscar en window todas las variables Leaflet (Folium crea map_<hash>)
-                console.log('🔎 Buscando mapa en window...');
-                for (var key in window) {{
-                    try {{
-                        if (window[key] && window[key].setView && typeof window[key].setView === 'function') {{
-                            leafletMap = window[key];
-                            console.log('🗺️ ¡Mapa encontrado!:', key);
-                            break;
-                        }}
-                    }} catch(e) {{
-                        // Ignorar errores de acceso a propiedades
-                    }}
-                }}
-                
-                // Alternativa: buscar en div._leaflet_map
-                if (!leafletMap) {{
-                    var mapDiv = document.querySelector('[id^="map"]');
-                    if (mapDiv && mapDiv._leaflet_map) {{
-                        leafletMap = mapDiv._leaflet_map;
-                        console.log('🗺️ Mapa encontrado en div._leaflet_map');
-                    }}
-                }}
-                
-                if (leafletMap && typeof leafletMap.setView === 'function') {{
-                    console.log('✅ Zoom ejecutado a:', coords.lat, coords.lon);
-                    leafletMap.setView([coords.lat, coords.lon], 10);
+            // Buscar el layer del corregimiento actual
+            if (leafletMap._layers) {{
+                for (var layerId in leafletMap._layers) {{
+                    var layer = leafletMap._layers[layerId];
                     
-                    // Buscar y abrir popup del corregimiento
-                    setTimeout(function() {{
-                        console.log('🔍 Buscando layer GeoJSON para:', corregimientoNombre);
+                    if (layer.feature && layer.feature.properties) {{
+                        var props = layer.feature.properties;
+                        var layerCorregName = props['corregimiento_nombre'] || props['corregimiento'] || props['name'] || '';
                         
-                        var foundLayer = null;
-                        
-                        // Buscar en los layers del mapa
-                        if (leafletMap._layers) {{
-                            console.log('📊 Total layers en mapa:', Object.keys(leafletMap._layers).length);
-                            
-                            for (var layerId in leafletMap._layers) {{
-                                var layer = leafletMap._layers[layerId];
-                                
-                                // Verificar si es un layer GeoJSON
-                                if (layer.feature && layer.feature.properties) {{
-                                    var props = layer.feature.properties;
-                                    var layerCorregName = props['corregimiento_nombre'] || props['corregimiento'] || props['name'] || '';
-                                    
-                                    if (layerCorregName.toUpperCase() === corregimientoNombre.toUpperCase()) {{
-                                        foundLayer = layer;
-                                        console.log('✅ Layer encontrado!', layerCorregName);
-                                        break;
-                                    }}
-                                }}
-                            }}
-                        }}
-                        
-                        // Si encontramos el layer, abrir popup
-                        if (foundLayer) {{
-                            console.log('🖱️ Abriendo popup del layer encontrado');
-                            
-                            // Método 1: Intentar abrir popup existente
-                            if (foundLayer.getPopup) {{
-                                var popup = foundLayer.getPopup();
-                                if (popup) {{
-                                    console.log('📍 Popup existente encontrado, abriendo...');
-                                    foundLayer.openPopup();
-                                    console.log('✅ Popup abierto exitosamente');
-                                }} else {{
-                                    console.log('⚠️ Layer no tiene popup vinculado');
-                                }}
-                            }} else {{
-                                console.log('⚠️ Layer sin método getPopup()');
-                            }}
-                            
-                            // Hacer que el layer sea visible (resaltar)
-                            if (foundLayer.setStyle) {{
-                                foundLayer.setStyle({{
+                        if (layerCorregName.toUpperCase() === corregimientoNombre.toUpperCase()) {{
+                            // Resaltar el nuevo layer
+                            if (layer.setStyle) {{
+                                layer.setStyle({{
                                     weight: 3,
                                     opacity: 1,
                                     fillOpacity: 0.9
                                 }});
-                                console.log('🎨 Layer resaltado');
+                                previousHighlightedLayer = layer;
                             }}
-                        }} else {{
-                            console.log('❌ Layer no encontrado para:', corregimientoNombre);
-                            console.log('🔎 Intentando matching exacto nuevamente...');
-                            // Segunda búsqueda: intenta match parcial
-                            if (leafletMap._layers) {{
-                                for (var layerId in leafletMap._layers) {{
-                                    var layer = leafletMap._layers[layerId];
-                                    if (layer.feature && layer.feature.properties) {{
-                                        var props = layer.feature.properties;
-                                        console.log('📝 Properties encontradas:', Object.keys(props));
-                                        console.log('   → name:', props['name']);
-                                        console.log('   → corregimiento:', props['corregimiento']);
-                                        console.log('   → corregimiento_nombre:', props['corregimiento_nombre']);
-                                    }}
-                                }}
-                            }}
+                            break;
                         }}
-                    }}, 300);
-                }} else {{
-                    console.log('❌ No se pudo hacer zoom - mapa no disponible');
+                    }}
                 }}
-            }}, 300);
+            }}
         }});
     }}
     
