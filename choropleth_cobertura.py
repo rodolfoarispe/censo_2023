@@ -392,24 +392,25 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
         ).add_to(m)
 
     # Preparar datos para búsqueda (Provincia → Distrito → Corregimiento)
+    # IMPORTANTE: Usar gdf_wgs84 para obtener coordenadas correctas (lat/lon)
     provincias_data = {}
     corregimientos_coords = {}  # Guardar coordenadas para búsqueda
     
-    for idx, row in gdf.iterrows():
+    for idx, row in gdf_wgs84.iterrows():
         prov_name = row.get('provincia_nombre') or row.get('provincia', 'N/A')
         dist_name = row.get('distrito_nombre') or row.get('distrito', 'N/A')
         corr_name = row.get('corregimiento_nombre') or row.get('corregimiento', 'N/A')
         
-        # Calcular centroide en WGS84 (coordenadas del mapa)
+        # Calcular centroide EN WGS84 (ya está transformado en gdf_wgs84)
         try:
-            centroide_wgs84 = row.geometry.centroid
-            lat = centroide_wgs84.y
-            lon = centroide_wgs84.x
+            centroide = row.geometry.centroid
+            lat = centroide.y
+            lon = centroide.x
         except:
             lat = center_lat
             lon = center_lon
         
-        # Guardar corregimiento con sus coordenadas
+        # Guardar corregimiento con sus coordenadas (WGS84)
         corregimientos_coords[corr_name] = {'lat': lat, 'lon': lon}
         
         if prov_name not in provincias_data:
@@ -470,26 +471,38 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
     """
     m.get_root().html.add_child(folium.Element(search_panel_html))
     
-    # Agregar JavaScript para interactividad de búsqueda (SIMPLIFICADO)
+    # Agregar JavaScript para interactividad de búsqueda (CON DEBUG)
     search_script = f"""
     <script>
+    console.log('🗺️ Script de búsqueda cargado');
+    
     var provinciasData = {provincias_json};
     var corregimientosCoords = {corregimientos_coords_json};
     
+    console.log('📍 Corregimientos disponibles:', Object.keys(corregimientosCoords).length);
+    
     // Inicializar búsqueda
     function inicializarBusqueda() {{
+        console.log('⏱️ Inicializando búsqueda...');
+        
         var provinciaSelect = document.getElementById('provincia-select');
         var distritosSelect = document.getElementById('distrito-select');
         var corregimientosSelect = document.getElementById('corregimiento-select');
         var zoomButton = document.getElementById('zoom-button');
         
         if (!provinciaSelect) {{
+            console.log('⏳ Panel no encontrado, reintentando...');
             setTimeout(inicializarBusqueda, 100);
             return;
         }}
         
+        console.log('✅ Panel de búsqueda encontrado');
+        
         // Llenar provincias
-        Object.keys(provinciasData).sort().forEach(function(provincia) {{
+        var provincias = Object.keys(provinciasData).sort();
+        console.log('🏘️ Provincias cargadas:', provincias);
+        
+        provincias.forEach(function(provincia) {{
             var option = document.createElement('option');
             option.value = provincia;
             option.text = provincia;
@@ -498,6 +511,7 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
         
         // Cambio de provincia
         provinciaSelect.addEventListener('change', function() {{
+            console.log('📍 Provincia seleccionada:', this.value);
             distritosSelect.innerHTML = '<option value="">-- Seleccionar Distrito --</option>';
             corregimientosSelect.innerHTML = '<option value="">-- Seleccionar Corregimiento --</option>';
             corregimientosSelect.disabled = true;
@@ -519,6 +533,7 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
         
         // Cambio de distrito
         distritosSelect.addEventListener('change', function() {{
+            console.log('🏢 Distrito seleccionado:', this.value);
             corregimientosSelect.innerHTML = '<option value="">-- Seleccionar Corregimiento --</option>';
             zoomButton.disabled = true;
             
@@ -539,21 +554,38 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
         
         // Cambio de corregimiento
         corregimientosSelect.addEventListener('change', function() {{
+            console.log('🏘️ Corregimiento seleccionado:', this.value);
             zoomButton.disabled = (this.value === '');
+            console.log('🔘 Botón zoom habilitado:', !zoomButton.disabled);
         }});
         
         // Click en botón: buscar el GeoJSON y hacer zoom
         zoomButton.addEventListener('click', function() {{
+            console.log('🔘 ¡Botón clickeado!');
+            
             var corregimientoNombre = corregimientosSelect.value;
-            if (!corregimientoNombre) return;
+            console.log('🔍 Buscando corregimiento:', corregimientoNombre);
+            
+            if (!corregimientoNombre) {{
+                console.log('❌ No hay corregimiento seleccionado');
+                return;
+            }}
             
             var coords = corregimientosCoords[corregimientoNombre];
-            if (!coords) return;
+            console.log('📍 Coordenadas encontradas:', coords);
             
-            // Buscar en Leaflet todos los layers y encontrar el que matches
+            if (!coords) {{
+                console.log('❌ Coordenadas no encontradas para:', corregimientoNombre);
+                return;
+            }}
+            
+            console.log('✅ Intentando zoom a:', coords.lat, coords.lon);
+            
+            // Buscar en Leaflet todos los layers y hacer click
             var layersControl = document.querySelectorAll('.leaflet-interactive');
-            layersControl.forEach(function(layer) {{
-                // Disparar un evento mouseover para activar tooltip y luego click para popup
+            console.log('🎯 Layers encontrados:', layersControl.length);
+            
+            layersControl.forEach(function(layer, index) {{
                 var event = new MouseEvent('click', {{
                     bubbles: true,
                     cancelable: true,
@@ -562,17 +594,60 @@ def create_choropleth(gdf, metric="cobertura", output_file="mapa_cobertura.html"
                 layer.dispatchEvent(event);
             }});
             
-            // Intentar hacer zoom usando la API de Leaflet si está disponible
+            // Intentar hacer zoom - buscar el mapa en variables globales
             setTimeout(function() {{
-                if (window.map || typeof map !== 'undefined') {{
-                    var leafletMap = window.map || map;
-                    if (leafletMap && typeof leafletMap.setView === 'function') {{
-                        leafletMap.setView([coords.lat, coords.lon], 10);
+                var leafletMap = null;
+                
+                // Buscar en window todas las variables Leaflet (Folium crea map_<hash>)
+                console.log('🔎 Buscando mapa en window...');
+                for (var key in window) {{
+                    try {{
+                        if (window[key] && window[key].setView && typeof window[key].setView === 'function') {{
+                            leafletMap = window[key];
+                            console.log('🗺️ ¡Mapa encontrado!:', key);
+                            break;
+                        }}
+                    }} catch(e) {{
+                        // Ignorar errores de acceso a propiedades
                     }}
                 }}
-            }}, 100);
+                
+                // Alternativa: buscar en div._leaflet_map
+                if (!leafletMap) {{
+                    var mapDiv = document.querySelector('[id^="map"]');
+                    if (mapDiv && mapDiv._leaflet_map) {{
+                        leafletMap = mapDiv._leaflet_map;
+                        console.log('🗺️ Mapa encontrado en div._leaflet_map');
+                    }}
+                }}
+                
+                if (leafletMap && typeof leafletMap.setView === 'function') {{
+                    console.log('✅ Zoom ejecutado a:', coords.lat, coords.lon);
+                    leafletMap.setView([coords.lat, coords.lon], 10);
+                    
+                    // Intentar hacer click en el GeoJSON para mostrar popup
+                    setTimeout(function() {{
+                        var geoJsonLayers = document.querySelectorAll('path[class*="leaflet"]');
+                        console.log('📍 Buscando GeoJSON layers para popup:', geoJsonLayers.length);
+                        
+                        // Buscar el layer que corresponde al corregimiento
+                        for (var i = 0; i < geoJsonLayers.length; i++) {{
+                            var event = new MouseEvent('click', {{
+                                bubbles: true,
+                                cancelable: true,
+                                view: window
+                            }});
+                            geoJsonLayers[i].dispatchEvent(event);
+                        }}
+                    }}, 200);
+                }} else {{
+                    console.log('❌ No se pudo hacer zoom - mapa no disponible');
+                }}
+            }}, 300);
         }});
     }}
+    
+    console.log('⏱️ document.readyState:', document.readyState);
     
     // Inicializar cuando esté listo
     if (document.readyState === 'loading') {{
